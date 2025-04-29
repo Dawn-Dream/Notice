@@ -4,4 +4,3 @@ frontend/node_modules/nas-notice-all/.env
 *.db
 backend/data.db
 .env
-.env

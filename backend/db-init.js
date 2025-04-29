@@ -50,6 +50,7 @@ db.serialize(() => {
     repeat_value INTEGER DEFAULT 1,
     notified INTEGER DEFAULT 0,
     notify_email TEXT,
+    last_notified_at TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
 
@@ -63,6 +64,7 @@ db.serialize(() => {
   )`);
 
   db.run(`ALTER TABLE timers ADD COLUMN notify_email TEXT;`, err => {});
+  db.run(`ALTER TABLE timers ADD COLUMN last_notified_at TEXT;`, err => {});
 
   // 新增：插入admin账号
   insertAdmin().then(() => db.close());

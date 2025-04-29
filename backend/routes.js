@@ -2,10 +2,11 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sqlite3 = require('sqlite3').verbose();
+require('dotenv').config();
 
 const router = express.Router();
 const db = new sqlite3.Database('./data.db');
-const JWT_SECRET = 'your_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 // 用户注册
 router.post('/api/register', async (req, res) => {

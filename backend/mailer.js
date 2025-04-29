@@ -1,14 +1,23 @@
 const nodemailer = require('nodemailer');
 const sqlite3 = require('sqlite3').verbose();
+require('dotenv').config();
+
+// 打印SMTP配置信息（注意隐藏密码）
+console.log('SMTP配置:', {
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: process.env.SMTP_SECURE,
+  user: process.env.SMTP_USER
+});
 
 // 这里请填写你的SMTP邮箱配置
 const transporter = nodemailer.createTransport({
-  host: 'smtp.163.com',
-  port: 465, // SSL加密
-  secure: true,
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
-    user: '', // 此处请填写你的邮箱账号
-    pass: ''  // 此处请填写你的邮箱授权码或密码
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
   }
 });
 
@@ -16,7 +25,7 @@ const db = new sqlite3.Database('./data.db');
 
 function sendMail(to, subject, text) {
   return transporter.sendMail({
-    from: '"倒计时提醒助手" <' + transporter.options.auth.user + '>', // 发件人名称和邮箱
+    from: process.env.SMTP_FROM || ('"倒计时提醒助手" <' + process.env.SMTP_USER + '>'), // 支持自定义发件人
     to,
     subject,
     text
@@ -32,8 +41,8 @@ setInterval(() => {
       return;
     }
     rows.forEach(async timer => {
+      const toEmail = timer.notify_email || timer.email;
       try {
-        const toEmail = timer.notify_email || timer.email;
         await sendMail(toEmail, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时\"${timer.title}\"已到达：${timer.end_time}`);
         const nowStr = new Date().toISOString();
         // 定期提醒逻辑

@@ -57,10 +57,50 @@ npm run dev       # 默认端口5174
 
 ---
 
+## 环境变量配置
+在 backend 目录下创建 .env 文件，配置以下环境变量：
+
+```env
+# SMTP邮箱配置
+SMTP_HOST=smtp.163.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your-email@163.com
+SMTP_PASS=your-password-or-token
+
+# JWT配置
+JWT_SECRET=your-jwt-secret-key
+
+# 服务器配置
+PORT=3000
+```
+
+### 环境变量说明
+1. **SMTP配置**
+   - SMTP_HOST：邮件服务器地址（如：smtp.163.com, smtp.gmail.com）
+   - SMTP_PORT：邮件服务器端口（通常SSL为465，非SSL为587）
+   - SMTP_SECURE：是否使用SSL（true/false）
+   - SMTP_USER：发件邮箱账号
+   - SMTP_PASS：邮箱授权码或密码
+
+2. **JWT配置**
+   - JWT_SECRET：用于生成JWT token的密钥，请设置一个复杂的随机字符串
+
+3. **服务器配置**
+   - PORT：后端服务器端口号，默认3000
+   - API_PROXY：后端API（=http://localhost:3000）
+    
+
+
+
+注意：请将 .env 文件添加到 .gitignore 中，避免敏感信息泄露。
+
+---
+
 ## 常见问题
 1. **端口冲突**：如3000/5174端口被占用，请在`backend/index.js`或`frontend/vite.config.js`中修改端口。
 2. **数据库初始化失败**：请确保`backend/data.db`有写权限，或删除后重新运行`db-init.js`。
-3. **邮件发送失败**：请检查`backend/mailer.js`中的SMTP配置。
+3. **邮件发送失败**：请检查`.env`文件中的SMTP配置是否正确。
 4. **接口404/500**：请确保前后端都已正确启动，且接口路径一致。
 
 ---

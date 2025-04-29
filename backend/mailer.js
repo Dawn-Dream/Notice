@@ -16,7 +16,7 @@ const db = new sqlite3.Database('./data.db');
 
 function sendMail(to, subject, text) {
   return transporter.sendMail({
-    from: '', // 此处请填写你的邮箱账号
+    from: '"倒计时提醒助手" <' + transporter.options.auth.user + '>', // 发件人名称和邮箱
     to,
     subject,
     text

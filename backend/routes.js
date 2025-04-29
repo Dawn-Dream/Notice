@@ -156,4 +156,27 @@ router.put('/api/timers/:id', auth, (req, res) => {
   });
 });
 
+// 修改用户邮箱（admin）
+router.put('/api/admin/users/:id/email', auth, adminOnly, async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ msg: '新邮箱不能为空' });
+  
+  // 检查邮箱格式
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return res.status(400).json({ msg: '邮箱格式不正确' });
+  }
+  
+  // 检查邮箱是否已被使用
+  db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ msg: '查询失败' });
+    if (row) return res.status(400).json({ msg: '该邮箱已被使用' });
+    
+    // 更新邮箱
+    db.run('UPDATE users SET email = ? WHERE id = ?', [email, req.params.id], function(err) {
+      if (err) return res.status(500).json({ msg: '修改失败' });
+      res.json({ msg: '修改成功' });
+    });
+  });
+});
+
 module.exports = router; 

@@ -7,8 +7,8 @@ const transporter = nodemailer.createTransport({
   port: 465, // SSL加密
   secure: true,
   auth: {
-    user: 'dawndream2020@163.com',
-    pass: 'SNvZnicF2eZcJS2w'
+    user: '', // 此处请填写你的邮箱账号
+    pass: ''  // 此处请填写你的邮箱授权码或密码
   }
 });
 
@@ -16,7 +16,7 @@ const db = new sqlite3.Database('./data.db');
 
 function sendMail(to, subject, text) {
   return transporter.sendMail({
-    from: 'dawndream2020@163.com',
+    from: '', // 此处请填写你的邮箱账号
     to,
     subject,
     text

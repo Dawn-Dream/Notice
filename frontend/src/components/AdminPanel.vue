@@ -110,23 +110,6 @@
         <el-button type="primary" @click="handleAddUser">确定</el-button>
       </template>
     </el-dialog>
-
-    <!-- 修改邮箱对话框 -->
-    <el-dialog
-      v-model="showEditEmailDialog"
-      title="修改邮箱"
-      width="500px"
-    >
-      <el-form :model="editEmailForm" :rules="rules" ref="editEmailFormRef" label-width="80px">
-        <el-form-item label="新邮箱" prop="email">
-          <el-input v-model="editEmailForm.email" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showEditEmailDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitEditEmail">确定</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -144,18 +127,12 @@ const activeTab = ref('users');
 const users = ref([]);
 const countdowns = ref([]);
 const showAddUserDialog = ref(false);
-const showEditEmailDialog = ref(false);
-const currentUser = ref(null);
 
 const newUser = ref({
   username: '',
   password: '',
   email: '',
   is_admin: 0
-});
-
-const editEmailForm = ref({
-  email: ''
 });
 
 const rules = {
@@ -174,7 +151,6 @@ const rules = {
 };
 
 const addUserFormRef = ref(null);
-const editEmailFormRef = ref(null);
 
 // 获取用户列表
 async function fetchUsers() {
@@ -251,6 +227,7 @@ async function handleEditEmail(user) {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         inputType: 'email',
+        inputValue: user.email,
         inputPlaceholder: '请输入新邮箱',
         inputValidator: (val) => {
           if (!val) return '新邮箱不能为空';
@@ -262,28 +239,12 @@ async function handleEditEmail(user) {
     await axios.put(`/api/admin/users/${user.id}/email`, { email: newEmail }, {
       headers: { Authorization: `Bearer ${props.token}` }
     });
-    ElMessage.success('邮箱修改成功');
+    ElMessage.success('修改邮箱成功');
     fetchUsers();
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('修改邮箱失败');
+      ElMessage.error(error.response?.data?.msg || '修改邮箱失败');
     }
-  }
-}
-
-async function submitEditEmail() {
-  try {
-    await editEmailFormRef.value.validate();
-    await axios.put(`/api/admin/users/${currentUser.value.id}/email`, {
-      email: editEmailForm.value.email
-    }, {
-      headers: { Authorization: `Bearer ${props.token}` }
-    });
-    ElMessage.success('修改邮箱成功');
-    showEditEmailDialog.value = false;
-    fetchUsers();
-  } catch (error) {
-    ElMessage.error('修改邮箱失败');
   }
 }
 

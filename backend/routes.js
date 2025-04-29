@@ -167,16 +167,12 @@ router.put('/api/admin/users/:id/email', auth, adminOnly, async (req, res) => {
     return res.status(400).json({ msg: '邮箱格式不正确' });
   }
   
-  // 检查邮箱是否已被使用
-  db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.params.id], (err, row) => {
-    if (err) return res.status(500).json({ msg: '查询失败' });
-    if (row) return res.status(400).json({ msg: '该邮箱已被使用' });
-    
-    // 更新邮箱
-    db.run('UPDATE users SET email = ? WHERE id = ?', [email, req.params.id], function(err) {
-      if (err) return res.status(500).json({ msg: '修改失败' });
-      res.json({ msg: '修改成功' });
-    });
+  // 直接更新邮箱
+  db.run('UPDATE users SET email = ? WHERE id = ?', [email, req.params.id], function(err) {
+    if (err) {
+      return res.status(500).json({ msg: '更新失败' });
+    }
+    res.json({ msg: '更新成功' });
   });
 });
 
@@ -194,10 +190,10 @@ router.post('/api/admin/users', auth, adminOnly, async (req, res) => {
     return res.status(400).json({ msg: '邮箱格式不正确' });
   }
   
-  // 检查用户名和邮箱是否已存在
-  db.get('SELECT id FROM users WHERE username = ? OR email = ?', [username, email], async (err, row) => {
+  // 只检查用户名是否已存在
+  db.get('SELECT id FROM users WHERE username = ?', [username], async (err, row) => {
     if (err) return res.status(500).json({ msg: '查询失败' });
-    if (row) return res.status(400).json({ msg: '用户名或邮箱已存在' });
+    if (row) return res.status(400).json({ msg: '用户名已存在' });
     
     try {
       const hash = await bcrypt.hash(password, 10);

@@ -18,6 +18,9 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // 允许自签名证书
   }
 });
 
@@ -25,7 +28,7 @@ const db = new sqlite3.Database('./data.db');
 
 function sendMail(to, subject, text) {
   return transporter.sendMail({
-    from: process.env.SMTP_USER, // 始终用SMTP_USER作为发件人
+    from: `"倒计时提醒助手" <${process.env.SMTP_USER}>`, // 添加发件人显示名称，但邮箱保持与SMTP_USER一致
     to,
     subject,
     text

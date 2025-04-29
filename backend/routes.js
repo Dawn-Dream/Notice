@@ -180,4 +180,46 @@ router.put('/api/admin/users/:id/email', auth, adminOnly, async (req, res) => {
   });
 });
 
+// 添加用户（admin）
+router.post('/api/admin/users', auth, adminOnly, async (req, res) => {
+  const { username, email, password, is_admin = 0 } = req.body;
+  
+  // 参数验证
+  if (!username || !email || !password) {
+    return res.status(400).json({ msg: '参数不完整' });
+  }
+  
+  // 检查邮箱格式
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return res.status(400).json({ msg: '邮箱格式不正确' });
+  }
+  
+  // 检查用户名和邮箱是否已存在
+  db.get('SELECT id FROM users WHERE username = ? OR email = ?', [username, email], async (err, row) => {
+    if (err) return res.status(500).json({ msg: '查询失败' });
+    if (row) return res.status(400).json({ msg: '用户名或邮箱已存在' });
+    
+    try {
+      const hash = await bcrypt.hash(password, 10);
+      db.run('INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)', 
+        [username, email, hash, is_admin], 
+        function(err) {
+          if (err) return res.status(500).json({ msg: '创建失败' });
+          res.json({ 
+            msg: '创建成功',
+            user: {
+              id: this.lastID,
+              username,
+              email,
+              is_admin
+            }
+          });
+        }
+      );
+    } catch (err) {
+      res.status(500).json({ msg: '密码加密失败' });
+    }
+  });
+});
+
 module.exports = router; 

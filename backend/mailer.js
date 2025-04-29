@@ -25,7 +25,7 @@ const db = new sqlite3.Database('./data.db');
 
 function sendMail(to, subject, text) {
   return transporter.sendMail({
-    from: process.env.SMTP_FROM || ('"倒计时提醒助手" <' + process.env.SMTP_USER + '>'), // 支持自定义发件人
+    from: process.env.SMTP_USER, // 始终用SMTP_USER作为发件人
     to,
     subject,
     text

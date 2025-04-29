@@ -1,7 +1,7 @@
-# nasNotice 项目总览
+# Notice 项目总览
 
 ## 项目简介
-nasNotice 是一个基于 Node.js + Vue3 + Element Plus 的倒计时定时邮件通知系统，支持用户注册、登录、倒计时管理、邮件提醒、管理员后台等功能。
+Notice 是一个基于 Node.js + Vue3 + Element Plus 的倒计时定时邮件通知系统，支持用户注册、登录、倒计时管理、邮件提醒、管理员后台等功能。
 
 ---
 

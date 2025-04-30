@@ -10,6 +10,7 @@ Notice 是一个基于 Node.js + Vue3 + Element Plus 的倒计时定时邮件通
 ├── backend/         # 后端 Node.js (Express + sqlite3)
 ├── frontend/        # 前端 Vue3 + Element Plus
 ├── README.md        # 项目说明文档
+├── package.json     # 根目录一键启动配置
 ```
 
 ---
@@ -22,23 +23,27 @@ git clone <your-repo-url>
 cd nasNotice
 ```
 
-### 2. 启动后端
+### 2. 安装依赖
 ```bash
-cd backend
-npm install
-node db-init.js   # 初始化数据库（首次运行）
-node index.js     # 启动后端服务，默认端口3000
+cd backend && npm install
+cd ../frontend && npm install
+cd .. && npm install   # 安装根目录依赖（concurrently）
 ```
 
-### 3. 启动前端
+### 3. 一键启动前后端（推荐）
 ```bash
-cd ../frontend
-npm install
-npm run dev       # 默认端口5174
+npm run dev
 ```
+- 前端会自动启动（默认端口5174），后端会自动启动（默认端口3000）
+- 你可以直接访问：http://localhost:5174
 
-### 4. 访问系统
-浏览器访问：http://localhost:5174
+### 4. 分别手动启动
+如需单独启动：
+```bash
+cd backend && node db-init.js   # 初始化数据库（首次运行）
+cd backend && npm start         # 启动后端服务
+cd frontend && npm run dev      # 启动前端服务
+```
 
 ---
 
@@ -54,6 +59,7 @@ npm run dev       # 默认端口5174
 ## 依赖说明
 - 前端：Vue3、Element Plus、axios、vite
 - 后端：Node.js、Express、sqlite3、bcrypt、jsonwebtoken、nodemailer
+- 根目录：concurrently（用于一键启动）
 
 ---
 

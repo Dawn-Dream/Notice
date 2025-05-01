@@ -19,7 +19,7 @@ Notice 是一个基于 Node.js + Vue3 + Element Plus 的倒计时定时邮件通
 
 ### 1. 克隆项目
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Dawn-Dream/Notice
 cd nasNotice
 ```
 

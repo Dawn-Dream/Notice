@@ -1,8 +1,8 @@
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 console.log('SMTP_HOST:', process.env.SMTP_HOST);
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const routes = require('./routes');
 require('./mailer');
 

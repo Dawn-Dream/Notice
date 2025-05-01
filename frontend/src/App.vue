@@ -62,6 +62,7 @@ async function fetchUserInfo(token) {
       headers: { Authorization: `Bearer ${token}` } 
     });
     userInfo.value = res.data;
+    localStorage.setItem('userInfo', JSON.stringify(res.data));
   } catch (error) {
     ElMessage.error('获取用户信息失败');
   }
@@ -77,6 +78,7 @@ function onLoginSuccess(newToken) {
 function logout() {
   token.value = '';
   localStorage.removeItem('token');
+  localStorage.removeItem('userInfo');
   userInfo.value = {};
   showAdmin.value = false;
   ElMessage.success('已退出登录');

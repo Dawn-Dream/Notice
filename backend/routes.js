@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sqlite3 = require('sqlite3').verbose();
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const router = express.Router();
@@ -214,6 +215,280 @@ router.post('/api/admin/users', auth, adminOnly, async (req, res) => {
       );
     } catch (err) {
       res.status(500).json({ msg: '密码加密失败' });
+    }
+  });
+});
+
+// 从环境变量获取SMTP配置
+function getEnvSmtpConfig() {
+  return {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE === 'true',
+    username: process.env.SMTP_USER,
+    password: process.env.SMTP_PASS,
+    from_name: process.env.SMTP_FROM_NAME
+  };
+}
+
+// SMTP配置管理API
+router.get('/api/admin/smtp', auth, adminOnly, (req, res) => {
+  // 先获取配置选项
+  db.get('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1', (err, setting) => {
+    if (err) {
+      console.error('查询SMTP配置失败:', err);
+      return res.status(500).json({ msg: '查询失败' });
+    }
+    
+    const useEnvConfig = setting ? setting.use_env_config : 1; // 默认使用环境变量
+    console.log('Current config mode:', useEnvConfig); // 添加调试日志
+    
+    // 如果使用环境变量配置
+    if (useEnvConfig) {
+      const envConfig = getEnvSmtpConfig();
+      if (envConfig.host && envConfig.username) {
+        const config = { 
+          ...envConfig, 
+          source: 'env',
+          use_env_config: 1,
+          secure: envConfig.secure
+        };
+        return res.json(config);
+      }
+    }
+
+    // 使用数据库配置
+    db.get('SELECT id, host, port, secure, username, from_name, use_env_config, created_at, updated_at FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
+      if (err) {
+        console.error('查询SMTP配置失败:', err);
+        return res.status(500).json({ msg: '查询失败' });
+      }
+      if (config) {
+        config.source = 'db';
+        config.secure = Boolean(config.secure);
+      }
+      return res.json(config || { 
+        host: '',
+        port: '587',
+        secure: false,
+        username: '',
+        from_name: '倒计时提醒助手',
+        use_env_config: useEnvConfig 
+      });
+    });
+  });
+});
+
+// 更新环境变量配置
+async function updateEnvConfig(config) {
+  const fs = require('fs').promises;
+  const path = require('path');
+  const envPath = path.join(__dirname, '../.env');
+  
+  try {
+    let envContent = await fs.readFile(envPath, 'utf8');
+    const envLines = envContent.split('\n');
+    const configMap = {
+      'SMTP_HOST': config.host,
+      'SMTP_PORT': config.port,
+      'SMTP_USER': config.username,
+      'SMTP_PASS': config.password,
+      'SMTP_SECURE': config.secure ? 'true' : 'false',
+      'SMTP_FROM_NAME': config.from_name
+    };
+
+    // 更新环境变量
+    for (const [key, value] of Object.entries(configMap)) {
+      const regex = new RegExp(`^${key}=.*$`, 'm');
+      const exists = envLines.some(line => regex.test(line));
+      
+      if (exists) {
+        envContent = envContent.replace(regex, `${key}=${value}`);
+      } else {
+        envContent += `\n${key}=${value}`;
+      }
+    }
+
+    await fs.writeFile(envPath, envContent.trim() + '\n');
+    
+    // 重新加载环境变量
+    Object.assign(process.env, configMap);
+    
+    return true;
+  } catch (error) {
+    console.error('更新环境变量失败:', error);
+    return false;
+  }
+}
+
+router.put('/api/admin/smtp', auth, adminOnly, async (req, res) => {
+  const { host, port, secure, username, password, from_name, use_env_config } = req.body;
+  console.log('Updating SMTP config:', { use_env_config, from_name }); // 添加调试日志
+  
+  try {
+    // 使用环境变量配置时，只需要验证 from_name
+    if (use_env_config) {
+      if (!from_name) {
+        return res.status(400).json({ msg: '发件人名称不能为空' });
+      }
+      
+      // 更新数据库中的配置
+      db.run(`
+        UPDATE smtp_config 
+        SET from_name = ?, use_env_config = 1, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = (SELECT id FROM smtp_config ORDER BY id DESC LIMIT 1)
+      `, [from_name], function(err) {
+        if (err) {
+          console.error('更新失败:', err);
+          return res.status(500).json({ msg: '更新失败' });
+        }
+        
+        // 如果没有更新任何记录，则插入新记录
+        if (this.changes === 0) {
+          const envConfig = getEnvSmtpConfig();
+          db.run(`
+            INSERT INTO smtp_config (host, port, secure, username, password, from_name, use_env_config)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+          `, [
+            envConfig.host || 'smtp.example.com',
+            envConfig.port || '587',
+            envConfig.secure ? 1 : 0,
+            envConfig.username || 'user@example.com',
+            envConfig.password || 'password',
+            from_name
+          ], function(err) {
+            if (err) {
+              console.error('创建失败:', err);
+              return res.status(500).json({ msg: '创建失败' });
+            }
+            res.json({ success: true, msg: '创建成功' });
+          });
+        } else {
+          res.json({ success: true, msg: '更新成功' });
+        }
+      });
+      return; // 添加 return 语句，避免执行后面的代码
+    }
+
+    // 使用数据库配置时，验证所有必要参数
+    if (!host || !port || !username || !password || !from_name) {
+      return res.status(400).json({ msg: '参数不完整' });
+    }
+
+    // 更新数据库配置
+    db.run(`
+      UPDATE smtp_config 
+      SET host = ?, port = ?, secure = ?, username = ?, password = ?, from_name = ?, use_env_config = 0, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = (SELECT id FROM smtp_config ORDER BY id DESC LIMIT 1)
+    `, [host, port, secure ? 1 : 0, username, password, from_name], function(err) {
+      if (err) {
+        console.error('更新失败:', err);
+        return res.status(500).json({ msg: '更新失败' });
+      }
+      
+      // 如果没有更新任何记录，则插入新记录
+      if (this.changes === 0) {
+        db.run(`
+          INSERT INTO smtp_config (host, port, secure, username, password, from_name, use_env_config)
+          VALUES (?, ?, ?, ?, ?, ?, 0)
+        `, [host, port, secure ? 1 : 0, username, password, from_name], function(err) {
+          if (err) {
+            console.error('创建失败:', err);
+            return res.status(500).json({ msg: '创建失败' });
+          }
+          res.json({ success: true, msg: '创建成功' });
+        });
+      } else {
+        res.json({ success: true, msg: '更新成功' });
+      }
+    });
+  } catch (error) {
+    console.error('保存SMTP配置失败:', error);
+    res.status(500).json({ msg: '保存失败：' + error.message });
+  }
+});
+
+// 测试SMTP配置
+router.post('/api/admin/smtp/test', auth, adminOnly, async (req, res) => {
+  const { test_email } = req.body;
+  
+  if (!test_email) {
+    return res.status(400).json({ msg: '请提供测试邮箱地址' });
+  }
+
+  // 先获取当前配置来源
+  db.get('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1', async (err, setting) => {
+    if (err) {
+      console.error('查询配置来源失败:', err);
+      return res.status(500).json({ msg: '查询配置失败' });
+    }
+
+    const useEnvConfig = setting ? setting.use_env_config : 1;
+    console.log('Testing with config mode:', useEnvConfig); // 添加调试日志
+
+    try {
+      let smtpConfig;
+      
+      if (useEnvConfig) {
+        // 使用环境变量配置
+        smtpConfig = getEnvSmtpConfig();
+        if (!smtpConfig.host || !smtpConfig.username || !smtpConfig.password) {
+          return res.status(500).json({ msg: '环境变量SMTP配置不完整' });
+        }
+      } else {
+        // 使用数据库配置
+        const dbConfig = await new Promise((resolve, reject) => {
+          db.get('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
+            if (err) reject(err);
+            else resolve(config);
+          });
+        });
+        
+        if (!dbConfig) {
+          return res.status(500).json({ msg: '数据库中没有SMTP配置' });
+        }
+        
+        smtpConfig = {
+          host: dbConfig.host,
+          port: dbConfig.port,
+          secure: Boolean(dbConfig.secure),
+          username: dbConfig.username,
+          password: dbConfig.password,
+          from_name: dbConfig.from_name
+        };
+      }
+
+      // 创建临时 transporter 用于测试
+      const transporter = nodemailer.createTransport({
+        host: smtpConfig.host,
+        port: Number(smtpConfig.port),
+        secure: smtpConfig.secure,
+        auth: {
+          user: smtpConfig.username,
+          pass: smtpConfig.password
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      // 验证配置
+      await transporter.verify();
+
+      // 发送测试邮件
+      await transporter.sendMail({
+        from: `"${smtpConfig.from_name}" <${smtpConfig.username}>`,
+        to: test_email,
+        subject: 'SMTP配置测试邮件',
+        text: `如果您收到这封邮件，说明SMTP配置正确。\n\n配置来源：${useEnvConfig ? '环境变量' : '数据库'}\n发送时间：${new Date().toLocaleString()}`
+      });
+
+      res.json({ success: true, msg: '测试邮件发送成功' });
+    } catch (error) {
+      console.error('发送测试邮件失败:', error);
+      res.status(500).json({ 
+        msg: '测试失败：' + (error.response?.message || error.message)
+      });
     }
   });
 });

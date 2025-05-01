@@ -7,3 +7,4 @@ backend/data.db
 **/.env
 !.env.example
 !**/.env.example
+backend/data.db.backup

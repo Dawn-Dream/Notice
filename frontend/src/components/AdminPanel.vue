@@ -1,10 +1,11 @@
 <template>
   <div class="admin-panel">
     <div class="panel-header">
-      <el-page-header @back="$emit('back')" :title="'返回'" content="用户管理" />
+      <el-page-header @back="$emit('back')" :title="'返回'" content="管理后台" />
       <el-tabs v-model="activeTab" class="header-tabs">
         <el-tab-pane label="用户管理" name="users" />
         <el-tab-pane label="倒计时管理" name="countdowns" />
+        <el-tab-pane label="系统设置" name="settings" />
       </el-tabs>
     </div>
 
@@ -52,7 +53,7 @@
         </el-table>
       </div>
 
-      <div v-else>
+      <div v-else-if="activeTab === 'countdowns'">
         <el-table 
           :data="countdowns" 
           style="width: 100%"
@@ -79,6 +80,135 @@
             </template>
           </el-table-column>
         </el-table>
+      </div>
+
+      <div v-else>
+        <!-- SMTP配置表单 -->
+        <el-card class="smtp-config">
+          <template #header>
+            <div class="card-header">
+              <span>SMTP服务器配置</span>
+              <div>
+                <el-tag 
+                  :type="serverConfigSource ? 'success' : 'info'" 
+                  class="config-source-tag"
+                >
+                  服务器当前使用{{ serverConfigSource ? '环境变量' : '数据库' }}配置
+                </el-tag>
+                <el-button type="primary" @click="testSmtp" :loading="testing">
+                  测试配置
+                </el-button>
+                <el-button type="success" @click="saveConfig" :loading="saving">
+                  保存配置
+                </el-button>
+              </div>
+            </div>
+          </template>
+          
+          <el-form :model="smtpConfig" label-width="120px" :rules="smtpRules" ref="smtpFormRef">
+            <el-form-item label="配置来源" prop="use_env_config">
+              <el-radio-group v-model="smtpConfig.use_env_config" @change="handleConfigSourceChange">
+                <el-radio :label="1">使用环境变量</el-radio>
+                <el-radio :label="0">使用数据库</el-radio>
+              </el-radio-group>
+              <el-tooltip content="环境变量配置优先级更高，适合生产环境；数据库配置方便调试" placement="top">
+                <el-icon class="config-help"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </el-form-item>
+
+            <template v-if="smtpConfig.use_env_config">
+              <el-alert
+                title="使用环境变量配置"
+                type="info"
+                description="当前使用服务器环境变量中的SMTP配置，如需修改请编辑服务器的环境变量文件。"
+                show-icon
+                :closable="false"
+                style="margin-bottom: 20px;"
+              />
+            </template>
+            
+            <template v-else>
+              <el-form-item label="SMTP服务器" prop="host">
+                <el-input 
+                  v-model="smtpConfig.host" 
+                  name="host"
+                  placeholder="例如：smtp.gmail.com"
+                >
+                  <template #append>
+                    <el-tooltip content="常见SMTP服务器配置参考" placement="top">
+                      <el-button @click="showSmtpHelp">
+                        <el-icon><QuestionFilled /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                  </template>
+                </el-input>
+              </el-form-item>
+              
+              <el-form-item label="端口" prop="port">
+                <el-input 
+                  v-model="smtpConfig.port" 
+                  name="port"
+                  placeholder="例如：587"
+                >
+                  <template #append>
+                    <el-select 
+                      v-model="smtpConfig.port" 
+                      style="width: 100px"
+                    >
+                      <el-option label="25 (SMTP)" value="25" />
+                      <el-option label="465 (SMTPS)" value="465" />
+                      <el-option label="587 (STARTTLS)" value="587" />
+                    </el-select>
+                  </template>
+                </el-input>
+              </el-form-item>
+              
+              <el-form-item label="安全连接" prop="secure">
+                <el-switch 
+                  v-model="smtpConfig.secure" 
+                  name="secure"
+                />
+                <span class="form-tip">
+                  端口465通常需要启用，端口587通常不需要
+                </span>
+              </el-form-item>
+              
+              <el-form-item label="用户名" prop="username">
+                <el-input 
+                  v-model="smtpConfig.username" 
+                  name="username"
+                  placeholder="完整邮箱地址"
+                />
+              </el-form-item>
+              
+              <el-form-item label="密码" prop="password">
+                <el-input 
+                  v-model="smtpConfig.password" 
+                  name="password"
+                  type="password" 
+                  placeholder="密码或授权码" 
+                  show-password
+                >
+                  <template #append>
+                    <el-tooltip content="如何获取授权码？" placement="top">
+                      <el-button @click="showAuthHelp">
+                        <el-icon><QuestionFilled /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                  </template>
+                </el-input>
+              </el-form-item>
+              
+              <el-form-item label="发件人名称" prop="from_name">
+                <el-input 
+                  v-model="smtpConfig.from_name" 
+                  name="from_name"
+                  placeholder="显示的发件人名称"
+                />
+              </el-form-item>
+            </template>
+          </el-form>
+        </el-card>
       </div>
     </div>
 
@@ -115,7 +245,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Plus, Delete, Message, Key } from '@element-plus/icons-vue';
+import { Plus, Delete, Message, Key, QuestionFilled } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import axios from 'axios';
 
@@ -127,6 +257,9 @@ const activeTab = ref('users');
 const users = ref([]);
 const countdowns = ref([]);
 const showAddUserDialog = ref(false);
+const saving = ref(false);
+const testing = ref(false);
+const isEnvConfig = ref(false);
 
 const newUser = ref({
   username: '',
@@ -134,6 +267,19 @@ const newUser = ref({
   email: '',
   is_admin: 0
 });
+
+const smtpConfig = ref({
+  host: '',
+  port: '587',
+  secure: false,
+  username: '',
+  password: '',
+  from_name: '倒计时提醒助手',
+  use_env_config: 1
+});
+
+// 添加新的状态来跟踪服务器实际使用的配置来源
+const serverConfigSource = ref(1); // 默认使用环境变量
 
 const rules = {
   username: [
@@ -150,7 +296,16 @@ const rules = {
   ]
 };
 
+const smtpRules = {
+  host: [{ required: true, message: '请输入SMTP服务器地址', trigger: 'blur', if: form => !form.use_env_config }],
+  port: [{ required: true, message: '请输入端口号', trigger: 'blur', if: form => !form.use_env_config }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur', if: form => !form.use_env_config }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur', if: form => !form.use_env_config }],
+  from_name: [{ required: true, message: '请输入发件人名称', trigger: 'blur', if: form => !form.use_env_config }]
+};
+
 const addUserFormRef = ref(null);
+const smtpFormRef = ref(null);
 
 // 获取用户列表
 async function fetchUsers() {
@@ -174,6 +329,279 @@ async function fetchCountdowns() {
   } catch (error) {
     ElMessage.error('获取倒计时列表失败');
   }
+}
+
+// 加载SMTP配置
+async function loadConfig() {
+  try {
+    const response = await fetch('/api/admin/smtp', {
+      headers: { 
+        'Authorization': `Bearer ${props.token}`
+      }
+    });
+    const data = await response.json();
+    if (data) {
+      // 更新服务器实际使用的配置来源
+      serverConfigSource.value = data.use_env_config;
+
+      // 检查环境变量配置是否完整
+      if (data.use_env_config && (!data.host || !data.username)) {
+        ElMessage.warning('环境变量配置不完整，已自动切换到数据库配置');
+        data.use_env_config = 0;
+      }
+
+      smtpConfig.value = {
+        host: data.host || '',
+        port: data.port || '465',
+        secure: data.secure ?? true,
+        username: data.username || '',
+        password: '', // 出于安全考虑，不显示已保存的密码
+        from_name: data.from_name || '',
+        use_env_config: Number(data.use_env_config)
+      };
+      console.log('Loaded config:', { ...smtpConfig.value, password: '***' }); // 添加调试日志
+    }
+  } catch (error) {
+    console.error('加载配置失败:', error);
+    ElMessage.error('加载配置失败：' + (error.response?.data?.msg || error.message));
+  }
+}
+
+// 处理配置来源切换
+async function handleConfigSourceChange(value) {
+  console.log('Config source changed to:', value); // 添加调试日志
+  
+  if (value === 1) {
+    // 切换到环境变量配置
+    try {
+      const response = await fetch('/api/admin/smtp', {
+        headers: { 
+          'Authorization': `Bearer ${props.token}`
+        }
+      });
+      const data = await response.json();
+      if (!data || !data.host || !data.username) {
+        ElMessage.error('环境变量配置不完整，无法切换');
+        smtpConfig.value.use_env_config = 0;
+        return;
+      }
+      // 加载环境变量配置
+      Object.assign(smtpConfig.value, {
+        host: data.host || '',
+        port: data.port || '465',
+        secure: data.secure ?? true,
+        username: data.username || '',
+        password: '', // 出于安全考虑，不显示密码
+        from_name: data.from_name || '',
+        use_env_config: 1
+      });
+      
+      // 禁用相关表单项
+      if (smtpFormRef.value) {
+        const formItems = smtpFormRef.value.$el.querySelectorAll('.el-form-item');
+        ['host', 'port', 'secure', 'username', 'password'].forEach(field => {
+          const formItem = Array.from(formItems).find(item => 
+            item.querySelector(`[name="${field}"]`) || 
+            item.querySelector(`[data-field="${field}"]`)
+          );
+          if (formItem) {
+            const input = formItem.querySelector('input, select');
+            if (input) {
+              input.disabled = true;
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('获取环境变量配置失败:', error);
+      ElMessage.error('获取环境变量配置失败，请检查服务器配置');
+      smtpConfig.value.use_env_config = 0;
+    }
+  } else {
+    // 切换到数据库配置
+    // 启用所有表单项
+    if (smtpFormRef.value) {
+      const formItems = smtpFormRef.value.$el.querySelectorAll('.el-form-item');
+      ['host', 'port', 'secure', 'username', 'password'].forEach(field => {
+        const formItem = Array.from(formItems).find(item => 
+          item.querySelector(`[name="${field}"]`) || 
+          item.querySelector(`[data-field="${field}"]`)
+        );
+        if (formItem) {
+          const input = formItem.querySelector('input, select');
+          if (input) {
+            input.disabled = false;
+          }
+        }
+      });
+    }
+  }
+}
+
+// 保存SMTP配置
+async function saveConfig() {
+  if (!smtpFormRef.value) return;
+  
+  try {
+    if (!smtpConfig.value.use_env_config) {
+      await smtpFormRef.value.validate();
+    }
+    saving.value = true;
+    
+    // 根据配置来源准备保存数据
+    const dataToSave = smtpConfig.value.use_env_config ? {
+      use_env_config: 1
+    } : {
+      host: smtpConfig.value.host,
+      port: smtpConfig.value.port,
+      secure: smtpConfig.value.secure,
+      username: smtpConfig.value.username,
+      password: smtpConfig.value.password || undefined, // 如果密码为空，则不更新
+      from_name: smtpConfig.value.from_name,
+      use_env_config: 0
+    };
+
+    const response = await fetch('/api/admin/smtp', {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${props.token}`
+      },
+      body: JSON.stringify(dataToSave)
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      ElMessage.success(data.msg || '保存成功');
+      await loadConfig(); // 重新加载配置
+    } else {
+      ElMessage.error(data.msg || '保存失败');
+    }
+  } catch (error) {
+    ElMessage.error('保存失败：' + (error.response?.data?.msg || error.message));
+  } finally {
+    saving.value = false;
+  }
+}
+
+// 测试SMTP配置
+async function testSmtp() {
+  if (!smtpFormRef.value) return;
+  
+  try {
+    await smtpFormRef.value.validate();
+  } catch (error) {
+    return;
+  }
+  
+  // 如果使用数据库配置，先保存当前配置
+  if (!smtpConfig.value.use_env_config) {
+    try {
+      const saveResponse = await fetch('/api/admin/smtp', {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${props.token}`
+        },
+        body: JSON.stringify({
+          ...smtpConfig.value,
+          use_env_config: 0
+        })
+      });
+      
+      const saveData = await saveResponse.json();
+      if (!saveData.success) {
+        ElMessage.error('保存配置失败：' + saveData.msg);
+        return;
+      }
+    } catch (error) {
+      ElMessage.error('保存配置失败：' + error.message);
+      return;
+    }
+  }
+  
+  // 弹窗输入测试邮箱
+  try {
+    const { value: email } = await ElMessageBox.prompt('请输入测试邮箱地址', '发送测试邮件', {
+      confirmButtonText: '发送',
+      cancelButtonText: '取消',
+      inputPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      inputErrorMessage: '请输入正确的邮箱地址'
+    });
+    
+    if (email) {
+      testing.value = true;
+      try {
+        const response = await fetch('/api/admin/smtp/test', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${props.token}`
+          },
+          body: JSON.stringify({ test_email: email })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          ElMessage.success(data.msg || '测试邮件发送成功');
+        } else {
+          ElMessage.error(data.msg || '测试失败');
+        }
+      } catch (error) {
+        ElMessage.error('测试失败：' + error.message);
+      } finally {
+        testing.value = false;
+      }
+    }
+  } catch {
+    // 用户取消输入
+  }
+}
+
+// 显示SMTP帮助
+function showSmtpHelp() {
+  ElMessageBox.alert(`
+    常见邮箱SMTP配置：
+    
+    1. Gmail
+    - 服务器：smtp.gmail.com
+    - 端口：587
+    - 安全连接：否
+    
+    2. QQ邮箱
+    - 服务器：smtp.qq.com
+    - 端口：465
+    - 安全连接：是
+    
+    3. 163邮箱
+    - 服务器：smtp.163.com
+    - 端口：465
+    - 安全连接：是
+    
+    4. Outlook/Hotmail
+    - 服务器：smtp.office365.com
+    - 端口：587
+    - 安全连接：否
+  `.trim(), 'SMTP服务器配置参考');
+}
+
+// 显示授权码帮助
+function showAuthHelp() {
+  ElMessageBox.alert(`
+    大多数邮箱服务商出于安全考虑，都需要使用授权码而不是密码来发送邮件：
+    
+    1. QQ邮箱
+    - 设置 -> 账户 -> POP3/SMTP服务 -> 开启 -> 生成授权码
+    
+    2. Gmail
+    - Google账户设置 -> 安全性 -> 2步验证 -> 应用专用密码
+    
+    3. 163邮箱
+    - 设置 -> POP3/SMTP/IMAP -> 开启 -> 授权码
+    
+    4. Outlook
+    - 需要使用Microsoft账户密码
+  `.trim(), '如何获取授权码？');
 }
 
 // 添加用户
@@ -202,17 +630,20 @@ async function handleResetPassword(user) {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         inputType: 'password',
-        inputPlaceholder: '请输入新密码',
-        inputValidator: (val) => val ? true : '新密码不能为空'
+        inputValidator: value => value.length >= 6,
+        inputErrorMessage: '密码长度不能小于6位'
       }
     );
-    await axios.post(`/api/admin/users/${user.id}/reset`, { new_password: newPassword }, {
-      headers: { Authorization: `Bearer ${props.token}` }
-    });
-    ElMessage.success('密码重置成功');
+    
+    if (newPassword) {
+      await axios.post(`/api/admin/users/${user.id}/reset`, { new_password: newPassword }, {
+        headers: { Authorization: `Bearer ${props.token}` }
+      });
+      ElMessage.success('密码重置成功');
+    }
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('重置密码失败');
+      ElMessage.error('密码重置失败');
     }
   }
 }
@@ -226,24 +657,22 @@ async function handleEditEmail(user) {
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        inputType: 'email',
         inputValue: user.email,
-        inputPlaceholder: '请输入新邮箱',
-        inputValidator: (val) => {
-          if (!val) return '新邮箱不能为空';
-          // 简单邮箱格式校验
-          return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(val) ? true : '邮箱格式不正确';
-        }
+        inputPattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        inputErrorMessage: '请输入正确的邮箱地址'
       }
     );
-    await axios.put(`/api/admin/users/${user.id}/email`, { email: newEmail }, {
-      headers: { Authorization: `Bearer ${props.token}` }
-    });
-    ElMessage.success('修改邮箱成功');
-    fetchUsers();
+    
+    if (newEmail) {
+      await axios.put(`/api/admin/users/${user.id}/email`, { email: newEmail }, {
+        headers: { Authorization: `Bearer ${props.token}` }
+      });
+      ElMessage.success('邮箱修改成功');
+      fetchUsers();
+    }
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.msg || '修改邮箱失败');
+      ElMessage.error('邮箱修改失败');
     }
   }
 }
@@ -251,17 +680,24 @@ async function handleEditEmail(user) {
 // 删除用户
 async function handleDeleteUser(user) {
   try {
-    await ElMessageBox.confirm(`确定要删除用户 ${user.username} 吗？`, '警告', {
-      type: 'warning'
-    });
+    await ElMessageBox.confirm(
+      `确定要删除用户"${user.username}"吗？`,
+      '删除用户',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+    
     await axios.delete(`/api/admin/users/${user.id}`, {
       headers: { Authorization: `Bearer ${props.token}` }
     });
-    ElMessage.success('删除用户成功');
+    ElMessage.success('删除成功');
     fetchUsers();
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除用户失败');
+      ElMessage.error('删除失败');
     }
   }
 }
@@ -269,160 +705,93 @@ async function handleDeleteUser(user) {
 // 删除倒计时
 async function handleDeleteCountdown(countdown) {
   try {
-    await ElMessageBox.confirm(`确定要删除倒计时 ${countdown.title} 吗？`, '警告', {
-      type: 'warning'
-    });
+    await ElMessageBox.confirm(
+      `确定要删除倒计时"${countdown.title}"吗？`,
+      '删除倒计时',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+    
     await axios.delete(`/api/admin/timers/${countdown.id}`, {
       headers: { Authorization: `Bearer ${props.token}` }
     });
-    ElMessage.success('删除倒计时成功');
+    ElMessage.success('删除成功');
     fetchCountdowns();
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除倒计时失败');
+      ElMessage.error('删除失败');
     }
   }
-}
-
-function formatDate(date) {
-  return new Date(date).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
 }
 
 onMounted(() => {
   fetchUsers();
   fetchCountdowns();
+  loadConfig();
 });
 </script>
 
 <style lang="scss" scoped>
 .admin-panel {
-  height: 100%;
-  width: 80%;
-  display: flex;
-  flex-direction: column;
-  background-color: #fff;
+  width: 100%;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: 20px;
   
   .panel-header {
-    border-bottom: 1px solid #dcdfe6;
-    
-    .el-page-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #dcdfe6;
-    }
-    
-    .header-tabs {
-      :deep(.el-tabs__header) {
-        margin: 0;
-        padding: 0 20px;
-      }
-      
-      :deep(.el-tabs__nav-wrap) {
-        padding: 0;
-      }
-      
-      :deep(.el-tabs__item) {
-        padding: 0 20px;
-        height: 40px;
-        line-height: 40px;
-      }
-    }
+    margin-bottom: 20px;
   }
   
-  .panel-content {
-    flex: 1;
-    margin: 20px;
-    background-color: #fff;
-    border-radius: 4px;
-    overflow: hidden;
-    
-    .action-bar {
-      margin-bottom: 16px;
-      
-      .add-button {
-        padding: 8px 16px;
-        font-size: 14px;
-      }
-    }
-
-    :deep(.el-table) {
-      .el-table__header-wrapper {
-        th {
-          background-color: #f5f7fa;
-          color: #606266;
-          font-weight: 500;
-          border-bottom: 1px solid #dcdfe6;
-        }
-      }
-      
-      .el-table__body-wrapper {
-        td {
-          padding: 8px 0;
-        }
-      }
-    }
+  .header-tabs {
+    margin-top: 20px;
   }
-}
-
-.action-buttons {
-  display: flex;
-  gap: 8px;
+  
+  .action-bar {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  
+  .action-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
   
   .action-button {
-    padding: 6px 12px;
-    height: 32px;
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    justify-content: center;
-    
-    .el-icon {
-      margin-right: 4px;
-    }
-  }
-}
-
-:deep(.el-dialog) {
-  border-radius: 4px;
-  
-  .el-dialog__header {
-    margin: 0;
-    padding: 16px 20px;
-    border-bottom: 1px solid #dcdfe6;
-    background-color: #f5f7fa;
+    gap: 5px;
   }
   
-  .el-dialog__body {
-    padding: 20px;
+  .smtp-config {
+    max-width: 800px;
+    margin: 20px auto;
   }
   
-  .el-dialog__footer {
-    padding: 16px 20px;
-    border-top: 1px solid #dcdfe6;
-    background-color: #f5f7fa;
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: #dcdfe6;
-  border-radius: 3px;
   
-  &:hover {
-    background-color: #c0c4cc;
+  .form-tip {
+    margin-left: 10px;
+    color: #909399;
+    font-size: 13px;
   }
-}
 
-::-webkit-scrollbar-track {
-  background-color: #f5f7fa;
+  .config-help {
+    margin-left: 8px;
+    color: #909399;
+    cursor: pointer;
+  }
+
+  .config-source-tag {
+    margin-right: 10px;
+  }
 }
 </style>

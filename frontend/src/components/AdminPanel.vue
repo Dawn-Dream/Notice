@@ -450,7 +450,8 @@ async function saveConfig() {
     
     // 根据配置来源准备保存数据
     const dataToSave = smtpConfig.value.use_env_config ? {
-      use_env_config: 1
+      use_env_config: 1,
+      from_name: smtpConfig.value.from_name
     } : {
       host: smtpConfig.value.host,
       port: smtpConfig.value.port,

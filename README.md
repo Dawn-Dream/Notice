@@ -147,4 +147,42 @@ PORT=3000
 
 ---
 
+## Docker 部署与使用
+
+### 拉取镜像
+```bash
+docker pull lycohana/notice:latest
+```
+
+### 运行容器（推荐挂载数据卷）
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -v $PWD/backend/data:/app/data \
+  -e SMTP_HOST=smtp.163.com \
+  -e SMTP_PORT=465 \
+  -e SMTP_USER=xxx@xxx.com \
+  -e SMTP_PASS=xxxxxx \
+  -e SMTP_SECURE=true \
+  -e SMTP_FROM_NAME=倒计时提醒助手 \
+  -e PORT=3000 \
+  lycohana/notice:latest
+```
+- 访问前端和后端：http://localhost:3000
+- 数据库存储在本地 backend/data 目录，容器重启数据不丢失。
+- 所有 SMTP 配置均可通过环境变量传入。
+
+### 主要环境变量说明
+| 变量名           | 说明             | 示例                  |
+|------------------|------------------|-----------------------|
+| SMTP_HOST        | SMTP服务器地址   | smtp.163.com          |
+| SMTP_PORT        | SMTP端口         | 465                   |
+| SMTP_USER        | 邮箱账号         | dawndream2020@163.com |
+| SMTP_PASS        | 邮箱密码/授权码  | xxxxxxxx              |
+| SMTP_SECURE      | 是否SSL          | true                  |
+| SMTP_FROM_NAME   | 发件人名称       | 倒计时提醒助手        |
+| PORT             | 后端服务端口     | 3000                  |
+
+---
+
 如有更多问题或建议，欢迎 issue 或 PR！ 

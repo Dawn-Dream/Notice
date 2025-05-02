@@ -1,7 +1,7 @@
 .git
 node_modules
 **/node_modules
-backend/*.db
+*.db
 **/.env
 *.log
 .DS_Store 

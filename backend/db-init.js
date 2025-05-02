@@ -19,7 +19,7 @@ async function insertAdmin() {
         if (err) {
           console.error('插入admin用户失败:', err);
         } else {
-          console.log('已插入admin账号');
+          console.log('已插入admin账号(password: 123456)');
         }
       });
     } else {

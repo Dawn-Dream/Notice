@@ -10,7 +10,6 @@
   "dependencies": {
     "axios": "^1.6.0",
     "dotenv": "^16.4.5",
-    "nas-notice-all": "file:..",
     "vue": "^3.4.0",
     "vue-router": "^4.5.1"
   },

@@ -21,6 +21,9 @@ COPY --from=backend-build /app/backend ./
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
+# 确保data目录存在
+RUN mkdir -p /app/data
+
 ENV PORT=3000
 ENV HOST=0.0.0.0
 ENV API_PROXY=http://localhost:3000

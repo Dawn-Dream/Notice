@@ -6,7 +6,7 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const router = express.Router();
-const db = new sqlite3.Database('./data.db');
+const db = new sqlite3.Database('./data/data.db');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 // 用户注册

@@ -2,7 +2,7 @@ const nodemailer = require('nodemailer');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 
-const db = new sqlite3.Database('./data.db');
+const db = new sqlite3.Database('./data/data.db');
 
 // 创建一个可重用的transporter
 let transporter = null;

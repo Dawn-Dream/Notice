@@ -154,7 +154,7 @@ PORT=3000
 docker pull lycohana/notice:latest
 ```
 
-### 运行容器（推荐挂载数据卷）
+### 运行容器（推荐挂载 data 目录，自动初始化数据库）
 ```bash
 docker run -d \
   -p 3000:3000 \
@@ -169,7 +169,8 @@ docker run -d \
   lycohana/notice:latest
 ```
 - 访问前端和后端：http://localhost:3000
-- 数据库存储在本地 backend/data 目录，容器重启数据不丢失。
+- 数据库存储在本地 backend/data 目录（挂载到容器 /app/data），数据库文件为 data.db。
+- **首次运行无需手动准备 data.db，容器会自动初始化数据库文件。**
 - 所有 SMTP 配置均可通过环境变量传入。
 
 ### 主要环境变量说明

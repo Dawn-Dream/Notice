@@ -1,6 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
-const db = new sqlite3.Database('./data.db');
+const db = new sqlite3.Database('./data/data.db');
 
 // 新增：插入admin账号逻辑
 async function insertAdmin() {

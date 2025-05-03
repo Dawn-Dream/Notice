@@ -1,76 +1,31 @@
 <template>
   <div class="countdown-manager">
-    <el-row :gutter="20">
-      <el-col :span="8">
-        <el-card class="email-manager">
-          <template #header>
-            <div class="card-header">
-              <span>通知邮箱管理</span>
-            </div>
-          </template>
-          
-          <div class="main-email">
-            <el-tag type="success">主邮箱：{{ userInfo.email }}</el-tag>
-          </div>
-          
-          <el-form @submit.prevent="addEmail" class="email-form">
-            <el-form-item>
-              <el-input
-                v-model="newEmail"
-                placeholder="新邮箱"
-                :prefix-icon="Message"
-              >
-                <template #append>
-                  <el-button @click="addEmail" type="primary">
-                    <el-icon><Plus /></el-icon>
-                    添加
-                  </el-button>
-                </template>
-              </el-input>
-            </el-form-item>
-          </el-form>
-          
-          <el-table :data="emails" style="width: 100%" empty-text="这里空空如也哟">
-            <el-table-column prop="email" label="邮箱地址" />
-            <el-table-column align="right" width="80">
-              <template #default="scope">
-                <el-button
-                  type="danger"
-                  :icon="Delete"
-                  circle
-                  @click="delEmail(scope.row.id)"
-                />
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-      
-      <el-col :span="16">
-        <el-card>
+    <el-row justify="center">
+      <el-col :span="35">
+        <el-card class="main-card">
           <template #header>
             <div class="card-header">
               <span>倒计时管理</span>
-              <el-button type="primary" @click="dialogVisible = true">
+              <el-button type="primary" @click="dialogVisible = true" class="add-btn">
                 <el-icon><Plus /></el-icon>
                 添加倒计时
               </el-button>
-    </div>
+            </div>
           </template>
-          
           <el-table
             :data="countdowns"
             style="width: 100%"
             v-loading="loading"
             empty-text="这里空空如也哟"
+            class="main-table"
           >
-            <el-table-column prop="title" label="标题" />
-            <el-table-column label="时间">
+            <el-table-column prop="title" label="标题" min-width="120" align="center" />
+            <el-table-column label="时间" min-width="180" align="center">
               <template #default="scope">
                 {{ formatTime(scope.row.end_time) }}
               </template>
             </el-table-column>
-            <el-table-column  align="center" label="周期" >
+            <el-table-column align="center" label="周期" min-width="100">
               <template #default="scope">
                 <el-tag v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none'" type="success">
                   每{{ scope.row.repeat_value || 1 }}{{ repeatUnitText(scope.row.repeat_type) }}
@@ -78,12 +33,12 @@
                 <el-tag v-else type="info">单次</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="状态" align="center" width="200">
+            <el-table-column label="状态" align="center" min-width="120">
               <template #default="scope">
                 <el-tag>{{ scope.row.status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column  align="center" label="操作" width="100">
+            <el-table-column align="center" label="操作" width="120">
               <template #default="scope">
                 <div class="action-buttons">
                   <el-button
@@ -100,6 +55,20 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="usage-tip-card">
+            <div class="usage-title">
+              <i class="el-icon-info"></i>
+              <span>使用提示</span>
+            </div>
+            <ul class="usage-list">
+              <li>支持单次和周期性倒计时提醒，可自定义提醒内容和周期单位。</li>
+              <li>可选择通知邮箱和Bark推送账户，支持多邮箱/多设备管理。</li>
+              <li>到期后自动推送邮件和Bark通知，周期任务会自动循环。</li>
+              <li>所有数据本地存储，支持Docker持久化部署。</li>
+              <li>如遇邮件发送失败，请检查SMTP配置和网络环境。</li>
+              <li>管理员可在后台管理所有用户和倒计时任务。</li>
+            </ul>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -191,6 +160,12 @@
             />
           </el-select>
         </el-form-item>
+        <!-- 新增Bark账户选择 -->
+        <el-form-item label="Bark账户" prop="bark_account_id">
+          <el-select v-model="form.bark_account_id" clearable placeholder="不推送Bark可不选">
+            <el-option v-for="b in barkAccounts" :key="b.id" :label="b.name + ' - ' + b.base_url" :value="b.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       
       <template #footer>
@@ -202,6 +177,7 @@
         </span>
         </template>
     </el-dialog>
+    <UserPanel v-if="showUserPanel" :token="token" @back="handleBack" />
   </div>
 </template>
 
@@ -215,6 +191,7 @@ import {
   Message
 } from '@element-plus/icons-vue';
 import axios from 'axios';
+import { useRouter } from 'vue-router';
 
 const props = defineProps({ token: String });
 const loading = ref(false);
@@ -227,6 +204,7 @@ const userInfo = ref({});
 const editing = ref(false);
 const editId = ref(null);
 let intervalId = null;
+const router = useRouter();
 
 const form = reactive({
   type: 'once',
@@ -236,7 +214,8 @@ const form = reactive({
   repeat_value: 1,
   repeat_unit: 'day',
   repeat_until: '',
-  notify_email: ''
+  notify_email: '',
+  bark_account_id: null
 });
 
 const rules = {
@@ -342,7 +321,8 @@ async function handleSubmit() {
           repeat_until: form.type === 'cycle' && form.repeat_until
             ? new Date(form.repeat_until).toISOString()
             : null,
-          notify_email: form.notify_email
+          notify_email: form.notify_email,
+          bark_account_id: form.bark_account_id
         };
 
         if (editing.value) {
@@ -379,6 +359,7 @@ function resetForm() {
   form.repeat_unit = 'day';
   form.repeat_until = '';
   form.notify_email = userInfo.value.email || '';
+  form.bark_account_id = null;
   editing.value = false;
   editId.value = null;
 }
@@ -390,6 +371,7 @@ function editCountdown(item) {
   form.email_content = item.email_content || '';
   form.target_time = item.end_time ? item.end_time.slice(0, 16) : '';
   form.notify_email = item.notify_email;
+  form.bark_account_id = item.bark_account_id;
   
   if (item.repeat_type && item.repeat_type !== 'none') {
     form.type = 'cycle';
@@ -471,10 +453,61 @@ async function delEmail(id) {
   }
 }
 
+const barkAccounts = ref([]);
+const newBark = reactive({ name: '', base_url: '', api_key: '' });
+async function fetchBarkAccounts() {
+  try {
+    const res = await axios.get('/api/user/bark-accounts', {
+      headers: { Authorization: `Bearer ${props.token}` }
+    });
+    barkAccounts.value = res.data;
+  } catch (error) {
+    ElMessage.error('获取Bark账户失败');
+  }
+}
+async function addBarkAccount() {
+  if (!newBark.name || !newBark.base_url || !newBark.api_key) return;
+  try {
+    await axios.post('/api/user/bark-accounts', newBark, {
+      headers: { Authorization: `Bearer ${props.token}` }
+    });
+    ElMessage.success('添加Bark账户成功');
+    newBark.name = '';
+    newBark.base_url = '';
+    newBark.api_key = '';
+    fetchBarkAccounts();
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || '添加Bark账户失败');
+  }
+}
+async function delBarkAccount(id) {
+  try {
+    await ElMessageBox.confirm('确定要删除这个Bark账户吗？', '警告', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+    await axios.delete(`/api/user/bark-accounts/${id}`, {
+      headers: { Authorization: `Bearer ${props.token}` }
+    });
+    ElMessage.success('删除Bark账户成功');
+    fetchBarkAccounts();
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除Bark账户失败');
+    }
+  }
+}
+
+function handleBack() {
+  router.push('/');
+}
+
 onMounted(() => {
   fetchUserInfo();
   fetchEmails();
   fetchCountdowns();
+  fetchBarkAccounts();
   intervalId = setInterval(fetchCountdowns, 10000);
 });
 
@@ -485,36 +518,72 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .countdown-manager {
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .main-email {
-    margin-bottom: 20px;
-  }
-  
-  .email-form {
-    margin-bottom: 20px;
-  }
-  
-  .el-table {
-    margin-top: 20px;
+  min-height: 100vh;
+  background: #f6fafb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  .main-card {
+    max-width: 1600px;
+    width: 65vw;
+    margin: 32px auto 0 auto;
+    padding: 32px 32px 24px 32px;
+    box-shadow: 0 4px 24px 0 rgba(0,0,0,0.08);
+    border-radius: 16px;
+    background: #fff;
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 20px;
+      font-weight: 600;
+      .add-btn {
+        float: right;
+      }
+    }
+    .main-table {
+      margin-top: 18px;
+    }
+    .usage-tip-card {
+      background: #e6f7ff;
+      border: 1px solid #b6e0fe;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px 0 rgba(0,0,0,0.04);
+      padding: 18px 24px 16px 24px;
+      margin-top: 32px;
+      .usage-title {
+        display: flex;
+        align-items: center;
+        font-size: 18px;
+        font-weight: bold;
+        color: #096dd9;
+        margin-bottom: 10px;
+        i {
+          font-size: 22px;
+          margin-right: 8px;
+        }
+      }
+      .usage-list {
+        margin: 0 0 0 18px;
+        padding: 0;
+        font-size: 15px;
+        line-height: 1.7;
+        color: #333;
+        li {
+          margin-bottom: 2px;
+          list-style: disc;
+        }
+      }
+    }
   }
 }
-
-.dialog-footer {
-  padding: 20px 0 0;
-  text-align: right;
-}
-
 .action-buttons {
   display: flex;
   align-items: center;
-  gap: 0px;
+  gap: 8px;
   .el-button {
-    padding:  10px;
+    padding: 10px;
     min-width: 32px;
     height: 32px;
     display: flex;
@@ -554,5 +623,22 @@ onUnmounted(() => {
     width: 120px;
     flex-shrink: 0;
   }
+}
+</style>
+
+<style scoped>
+.usage-tip .el-alert {
+  background: #e6f7ff !important;
+  color: #222 !important;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.04);
+  border: 1px solid #b6e0fe !important;
+}
+.usage-tip .el-alert__title {
+  color: #096dd9 !important;
+  font-weight: bold;
+}
+.usage-tip .el-alert__description {
+  color: #333 !important;
 }
 </style> 

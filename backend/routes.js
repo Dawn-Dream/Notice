@@ -53,8 +53,8 @@ function adminOnly(req, res, next) {
 
 // 新建倒计时
 router.post('/api/timers', auth, (req, res) => {
-  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null } = req.body;
-  db.run('INSERT INTO timers (user_id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [req.user.id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email], function(err) {
+  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null } = req.body;
+  db.run('INSERT INTO timers (user_id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [req.user.id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id], function(err) {
     if (err) return res.status(500).json({ msg: '创建失败' });
     res.json({ id: this.lastID });
   });
@@ -223,8 +223,8 @@ router.delete('/api/user/emails/:id', auth, (req, res) => {
 
 // 编辑倒计时
 router.put('/api/timers/:id', auth, (req, res) => {
-  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null } = req.body;
-  db.run('UPDATE timers SET title = ?, end_time = ?, email_content = ?, repeat_type = ?, repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ? WHERE id = ? AND user_id = ?', [title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, req.params.id, req.user.id], function(err) {
+  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null } = req.body;
+  db.run('UPDATE timers SET title = ?, end_time = ?, email_content = ?, repeat_type = ?, repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ?, bark_account_id = ? WHERE id = ? AND user_id = ?', [title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id, req.params.id, req.user.id], function(err) {
     if (err) return res.status(500).json({ msg: '更新失败', error: err.message });
     res.json({ msg: '更新成功' });
   });
@@ -562,6 +562,31 @@ router.post('/api/admin/smtp/test', auth, adminOnly, async (req, res) => {
         msg: '测试失败：' + (error.response?.message || error.message)
       });
     }
+  });
+});
+
+// ========== Bark账户管理API ==========
+// 获取当前用户所有Bark账户
+router.get('/api/user/bark-accounts', auth, (req, res) => {
+  db.all('SELECT id, name, base_url, api_key FROM user_bark_accounts WHERE user_id = ?', [req.user.id], (err, rows) => {
+    if (err) return res.status(500).json({ msg: '查询失败' });
+    res.json(rows);
+  });
+});
+// 新增Bark账户
+router.post('/api/user/bark-accounts', auth, (req, res) => {
+  const { name, base_url, api_key } = req.body;
+  if (!name || !base_url || !api_key) return res.status(400).json({ msg: '参数不完整' });
+  db.run('INSERT INTO user_bark_accounts (user_id, name, base_url, api_key) VALUES (?, ?, ?, ?)', [req.user.id, name, base_url, api_key], function(err) {
+    if (err) return res.status(500).json({ msg: '添加失败' });
+    res.json({ id: this.lastID });
+  });
+});
+// 删除Bark账户
+router.delete('/api/user/bark-accounts/:id', auth, (req, res) => {
+  db.run('DELETE FROM user_bark_accounts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], function(err) {
+    if (err) return res.status(500).json({ msg: '删除失败' });
+    res.json({ msg: '删除成功' });
   });
 });
 

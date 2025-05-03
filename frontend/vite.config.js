@@ -18,9 +18,11 @@ export default defineConfig(({ mode }) => {
     css: {
       preprocessorOptions: {
         scss: {
-          implementation: sass
+          implementation: sass,
+          silenceDeprecations: ['legacy-js-api']
         }
-      }
+      },
+      api: 'modern'
     }
   };
 }); 

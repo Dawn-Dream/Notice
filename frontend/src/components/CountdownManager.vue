@@ -78,6 +78,11 @@
                 <el-tag v-else type="info">单次</el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="状态" align="center" width="200">
+              <template #default="scope">
+                <el-tag>{{ scope.row.status }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column  align="center" label="操作" width="100">
               <template #default="scope">
                 <div class="action-buttons">
@@ -201,7 +206,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Delete,
@@ -221,6 +226,7 @@ const newEmail = ref('');
 const userInfo = ref({});
 const editing = ref(false);
 const editId = ref(null);
+let intervalId = null;
 
 const form = reactive({
   type: 'once',
@@ -275,7 +281,17 @@ async function fetchCountdowns() {
     const res = await axios.get('/api/timers', {
       headers: { Authorization: `Bearer ${props.token}` }
     });
-  countdowns.value = res.data;
+    const newData = res.data;
+    if (countdowns.value.length !== newData.length ||
+        !countdowns.value.every((item, idx) => item.id === newData[idx].id)) {
+      countdowns.value = newData;
+    } else {
+      for (let i = 0; i < countdowns.value.length; i++) {
+        if (countdowns.value[i].status !== newData[i].status) {
+          countdowns.value[i].status = newData[i].status;
+        }
+      }
+    }
   } catch (error) {
     ElMessage.error('获取倒计时列表失败');
   } finally {
@@ -459,6 +475,11 @@ onMounted(() => {
   fetchUserInfo();
   fetchEmails();
   fetchCountdowns();
+  intervalId = setInterval(fetchCountdowns, 10000);
+});
+
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId);
 });
 </script>
 

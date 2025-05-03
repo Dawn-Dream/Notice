@@ -64,7 +64,43 @@ router.post('/api/timers', auth, (req, res) => {
 router.get('/api/timers', auth, (req, res) => {
   db.all('SELECT * FROM timers WHERE user_id = ?', [req.user.id], (err, rows) => {
     if (err) return res.status(500).json({ msg: '查询失败' });
-    res.json(rows);
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const result = rows.map(row => {
+      let status = '';
+      if (row.notified) {
+        status = '已通知';
+      } else if (row.repeat_type && row.repeat_type !== 'none') {
+        // 计算下次通知时间
+        let next = new Date(row.end_time);
+        const repeatValue = row.repeat_value || 1;
+        let unit = row.repeat_type;
+        while (next <= now) {
+          if (unit === 'minute') next.setMinutes(next.getMinutes() + repeatValue);
+          if (unit === 'hour') next.setHours(next.getHours() + repeatValue);
+          if (unit === 'day') next.setDate(next.getDate() + repeatValue);
+          if (unit === 'month') next.setMonth(next.getMonth() + repeatValue);
+          if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
+        }
+        const diffMs = next - now;
+        const diffMin = Math.round(diffMs / (1000 * 60));
+        const diffHour = Math.round(diffMs / (1000 * 60 * 60));
+        const diffDay = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMin < 60) {
+          status = `下一次通知在${diffMin}分钟后`;
+        } else if (diffHour < 24) {
+          status = `下一次通知在${diffHour}小时后`;
+        } else if (diffDay >= 1) {
+          status = `下一次通知在${diffDay}天后`;
+        } else {
+          status = '等待通知';
+        }
+      } else {
+        status = '等待通知';
+      }
+      return { ...row, status };
+    });
+    res.json(result);
   });
 });
 
@@ -88,7 +124,43 @@ router.get('/api/admin/users', auth, adminOnly, (req, res) => {
 router.get('/api/admin/timers', auth, adminOnly, (req, res) => {
   db.all('SELECT timers.*, users.username FROM timers LEFT JOIN users ON timers.user_id = users.id', (err, rows) => {
     if (err) return res.status(500).json({ msg: '查询失败' });
-    res.json(rows);
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const result = rows.map(row => {
+      let status = '';
+      if (row.notified) {
+        status = '已通知';
+      } else if (row.repeat_type && row.repeat_type !== 'none') {
+        // 计算下次通知时间
+        let next = new Date(row.end_time);
+        const repeatValue = row.repeat_value || 1;
+        let unit = row.repeat_type;
+        while (next <= now) {
+          if (unit === 'minute') next.setMinutes(next.getMinutes() + repeatValue);
+          if (unit === 'hour') next.setHours(next.getHours() + repeatValue);
+          if (unit === 'day') next.setDate(next.getDate() + repeatValue);
+          if (unit === 'month') next.setMonth(next.getMonth() + repeatValue);
+          if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
+        }
+        const diffMs = next - now;
+        const diffMin = Math.round(diffMs / (1000 * 60));
+        const diffHour = Math.round(diffMs / (1000 * 60 * 60));
+        const diffDay = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMin < 60) {
+          status = `下一次通知在${diffMin}分钟后`;
+        } else if (diffHour < 24) {
+          status = `下一次通知在${diffHour}小时后`;
+        } else if (diffDay >= 1) {
+          status = `下一次通知在${diffDay}天后`;
+        } else {
+          status = '等待通知';
+        }
+      } else {
+        status = '等待通知';
+      }
+      return { ...row, status };
+    });
+    res.json(result);
   });
 });
 

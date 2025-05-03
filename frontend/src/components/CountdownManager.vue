@@ -78,7 +78,7 @@
                 <el-tag v-else type="info">单次</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="状态" align="center">
+            <el-table-column label="状态" align="center" width="200">
               <template #default="scope">
                 <el-tag>{{ scope.row.status }}</el-tag>
               </template>

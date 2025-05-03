@@ -4,7 +4,7 @@
       <div class="header-content">
         <div class="logo-title">
           <el-icon class="mr-10"><Timer /></el-icon>
-          <h2>倒计时定时邮件通知</h2>
+          <h2>NOTICE!</h2>
         </div>
         <div v-if="token" class="header-actions">
           <el-dropdown @command="handleCommand">

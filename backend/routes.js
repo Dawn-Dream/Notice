@@ -313,7 +313,7 @@ router.get('/api/admin/smtp', auth, adminOnly, (req, res) => {
     }
     
     const useEnvConfig = setting ? setting.use_env_config : 1; // 默认使用环境变量
-    console.log('Current config mode:', useEnvConfig); // 添加调试日志
+    //console.log('Current config mode:', useEnvConfig); // 添加调试日志
     
     // 如果使用环境变量配置
     if (useEnvConfig) {

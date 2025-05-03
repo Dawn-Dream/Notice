@@ -359,7 +359,6 @@ async function loadConfig() {
         from_name: data.from_name || '',
         use_env_config: Number(data.use_env_config)
       };
-      console.log('Loaded config:', { ...smtpConfig.value, password: '***' }); // 添加调试日志
     }
   } catch (error) {
     console.error('加载配置失败:', error);
@@ -369,7 +368,6 @@ async function loadConfig() {
 
 // 处理配置来源切换
 async function handleConfigSourceChange(value) {
-  console.log('Config source changed to:', value); // 添加调试日志
   
   if (value === 1) {
     // 切换到环境变量配置

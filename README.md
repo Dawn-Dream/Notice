@@ -186,4 +186,37 @@ docker run -d \
 
 ---
 
+## Bark 推送说明
+
+系统支持通过 [Bark](https://github.com/Finb/Bark) iOS App 推送通知到你的 iPhone。
+
+### 主要特性
+- 每个用户可添加多个 Bark 账户（baseUrl + API Key）
+- 倒计时任务可选择用哪个 Bark 账户推送通知
+- 邮件和 Bark 推送可同时进行，互不影响
+
+### 前端使用指引
+1. 在"通知邮箱管理"区域下方，管理你的 Bark 账户（添加/删除/查看）
+   - 备注/名称：自定义区分不同设备或用途
+   - BaseUrl：Bark 服务器地址（如 https://api.day.app 或自建）
+   - API Key：Bark App 里的设备密钥
+2. 新建/编辑倒计时时，可选择一个 Bark 账户进行推送（可不选）
+3. 到期时，系统会自动用所选 Bark 账户推送通知到你的 iOS 设备
+
+### 后端API说明
+- `GET /api/user/bark-accounts` 获取当前用户所有 Bark 账户
+- `POST /api/user/bark-accounts` 新增 Bark 账户（name, base_url, api_key）
+- `DELETE /api/user/bark-accounts/:id` 删除 Bark 账户
+- 倒计时相关API支持 bark_account_id 字段
+
+### 依赖说明
+- 后端依赖 [@thiskyhan/bark.js](https://www.npmjs.com/package/@thiskyhan/bark.js) 进行推送
+- 数据库存储 Bark 账户信息，安全可靠
+
+### 参考
+- [Bark 官方文档](https://github.com/Finb/Bark)
+- [bark.js 文档](https://github.com/chimpdev/bark.js)
+
+---
+
 如有更多问题或建议，欢迎 issue 或 PR！ 

@@ -7,12 +7,13 @@
     "init-db": "node db-init.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "sqlite3": "^5.1.6",
-    "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.11",
+    "@thiskyhan/bark.js": "^3.1.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.11",
+    "sqlite3": "^5.1.6"
   }
-} 
+}

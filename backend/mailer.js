@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
+const { BarkClient } = require('@thiskyhan/bark.js');
 
 const db = new sqlite3.Database('./data/data.db');
 
@@ -227,7 +228,26 @@ setInterval(() => {
     rows.forEach(async timer => {
       const toEmail = timer.notify_email || timer.email;
       try {
-        await sendMail(toEmail, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时\"${timer.title}\"已到达：${timer.end_time}`);
+        // 邮件推送
+        await sendMail(toEmail, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`);
+        // Bark 推送
+        if (timer.bark_account_id) {
+          db.get('SELECT * FROM user_bark_accounts WHERE id = ?', [timer.bark_account_id], async (err, barkAcc) => {
+            if (!err && barkAcc) {
+              const client = new BarkClient({ baseUrl: barkAcc.base_url, key: barkAcc.api_key });
+              const payload = {
+                body: timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`,
+                title: timer.title
+              };
+              try {
+                await client.pushMessage(payload);
+                console.log(`Bark推送成功：${timer.title}`);
+              } catch (e) {
+                console.error('Bark推送失败:', e);
+              }
+            }
+          });
+        }
         const nowStr = new Date().toISOString();
         // 定期提醒逻辑
         let nextTime = null;

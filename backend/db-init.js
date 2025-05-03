@@ -83,6 +83,7 @@ db.serialize(() => {
     notified INTEGER DEFAULT 0,
     notify_email TEXT,
     last_notified_at TEXT,
+    bark_account_id INTEGER,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
 
@@ -109,8 +110,19 @@ db.serialize(() => {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  // 用户Bark账户表
+  db.run(`CREATE TABLE IF NOT EXISTS user_bark_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
   db.run(`ALTER TABLE timers ADD COLUMN notify_email TEXT;`, err => {});
   db.run(`ALTER TABLE timers ADD COLUMN last_notified_at TEXT;`, err => {});
+  db.run(`ALTER TABLE timers ADD COLUMN bark_account_id INTEGER;`, err => {});
 
   // 新增：插入admin账号和默认SMTP配置
   Promise.all([

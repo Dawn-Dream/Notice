@@ -18,6 +18,10 @@
                   <el-icon><Setting /></el-icon>
                   管理后台
                 </el-dropdown-item>
+                <el-dropdown-item command="settings">
+                  <el-icon><Setting /></el-icon>
+                  个人设置
+                </el-dropdown-item>
                 <el-dropdown-item command="logout">
                   <el-icon><SwitchButton /></el-icon>
                   退出登录
@@ -36,8 +40,9 @@
         </el-card>
       </div>
       <template v-else>
-        <CountdownManager v-if="!showAdmin" :token="token" />
-        <AdminPanel v-else :token="token" @back="showAdmin = false" />
+        <CountdownManager v-if="!showAdmin && !showSettings" :token="token" />
+        <AdminPanel v-else-if="showAdmin" :token="token" @back="showAdmin = false" />
+        <UserPanel v-else :token="token" @back="showSettings = false" />
       </template>
     </el-main>
   </el-container>
@@ -49,12 +54,14 @@ import { Timer, Setting, SwitchButton, ArrowDown } from '@element-plus/icons-vue
 import LoginRegister from './components/LoginRegister.vue';
 import CountdownManager from './components/CountdownManager.vue';
 import AdminPanel from './components/AdminPanel.vue';
+import UserPanel from './components/UserPanel.vue';
 import axios from 'axios';
 import { ElMessage } from 'element-plus';
 
 const token = ref(localStorage.getItem('token'));
 const userInfo = ref({});
 const showAdmin = ref(false);
+const showSettings = ref(false);
 
 async function fetchUserInfo(token) {
   try {
@@ -81,6 +88,7 @@ function logout() {
   localStorage.removeItem('userInfo');
   userInfo.value = {};
   showAdmin.value = false;
+  showSettings.value = false;
   ElMessage.success('已退出登录');
 }
 
@@ -89,6 +97,10 @@ function handleCommand(command) {
     logout();
   } else if (command === 'admin') {
     showAdmin.value = true;
+    showSettings.value = false;
+  } else if (command === 'settings') {
+    showSettings.value = true;
+    showAdmin.value = false;
   }
 }
 

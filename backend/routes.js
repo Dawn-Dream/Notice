@@ -28,7 +28,11 @@ router.post('/api/login', (req, res) => {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(400).json({ msg: '密码错误' });
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token });
+    res.json({ 
+      token,
+      username: user.username,
+      is_admin: user.is_admin
+    });
   });
 });
 
@@ -45,19 +49,82 @@ function auth(req, res, next) {
 
 // 管理员鉴权
 function adminOnly(req, res, next) {
-  if (!req.user || req.user.username !== 'admin') {
-    return res.status(403).json({ msg: '无权限' });
-  }
-  next();
+  db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
+    if (err || !user || !user.is_admin) {
+      return res.status(403).json({ msg: '无权限' });
+    }
+    next();
+  });
 }
 
 // 新建倒计时
 router.post('/api/timers', auth, (req, res) => {
-  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null } = req.body;
-  db.run('INSERT INTO timers (user_id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [req.user.id, title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id], function(err) {
-    if (err) return res.status(500).json({ msg: '创建失败' });
-    res.json({ id: this.lastID });
-  });
+  try {
+    const {
+      title, end_time, email_content, repeat_type = 'none', repeat_until = null, 
+      repeat_value = 1, notify_email = null, bark_account_id = null,
+      bark_title = null, bark_body = null, bark_group = null, 
+      bark_sound = null, bark_level = null, bark_copy = null, bark_url = null
+    } = req.body;
+
+    // 基本参数验证
+    if (!title || !end_time) {
+      return res.status(400).json({ msg: '标题和截止时间不能为空' });
+    }
+
+    // 验证日期格式
+    const endTimeDate = new Date(end_time);
+    if (isNaN(endTimeDate.getTime())) {
+      return res.status(400).json({ msg: '截止时间格式不正确' });
+    }
+
+    // 验证重复设置
+    if (repeat_type !== 'none' && repeat_type !== undefined) {
+      if (!['minute', 'hour', 'day', 'month', 'year'].includes(repeat_type)) {
+        return res.status(400).json({ msg: '无效的重复类型' });
+      }
+      if (repeat_value < 1) {
+        return res.status(400).json({ msg: '重复间隔必须大于0' });
+      }
+      if (repeat_until) {
+        const repeatUntilDate = new Date(repeat_until);
+        if (isNaN(repeatUntilDate.getTime())) {
+          return res.status(400).json({ msg: '周期终止时间格式不正确' });
+        }
+      }
+    }
+
+    // 验证邮箱格式
+    if (notify_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notify_email)) {
+      return res.status(400).json({ msg: '邮箱格式不正确' });
+    }
+
+    // 插入数据库
+    const sql = `
+      INSERT INTO timers (
+        user_id, title, end_time, email_content, repeat_type, repeat_until, 
+        repeat_value, notify_email, bark_account_id, bark_title, bark_body, 
+        bark_group, bark_sound, bark_level, bark_copy, bark_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const params = [
+      req.user.id, title, end_time, email_content, repeat_type, repeat_until,
+      repeat_value, notify_email, bark_account_id, bark_title, bark_body,
+      bark_group, bark_sound, bark_level, bark_copy, bark_url
+    ];
+
+    db.run(sql, params, function(err) {
+      if (err) {
+        console.error('创建倒计时失败:', err);
+        return res.status(500).json({ msg: '创建失败', error: err.message });
+      }
+      res.json({ id: this.lastID, msg: '创建成功' });
+    });
+  } catch (error) {
+    console.error('创建倒计时异常:', error);
+    res.status(500).json({ msg: '服务器错误', error: error.message });
+  }
 });
 
 // 查询当前用户所有倒计时
@@ -83,17 +150,24 @@ router.get('/api/timers', auth, (req, res) => {
           if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
         }
         const diffMs = next - now;
-        const diffMin = Math.round(diffMs / (1000 * 60));
-        const diffHour = Math.round(diffMs / (1000 * 60 * 60));
-        const diffDay = Math.round(diffMs / (1000 * 60 * 60 * 24));
-        if (diffMin < 60) {
+        const diffMin = Math.floor(diffMs / (1000 * 60));
+        const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        
+        if (diffMin < 1) {
+          status = '即将通知';
+        } else if (diffMin < 60) {
           status = `下一次通知在${diffMin}分钟后`;
         } else if (diffHour < 24) {
-          status = `下一次通知在${diffHour}小时后`;
-        } else if (diffDay >= 1) {
-          status = `下一次通知在${diffDay}天后`;
+          const remainMinutes = diffMin % 60;
+          status = remainMinutes > 0 
+            ? `下一次通知在${diffHour}小时${remainMinutes}分钟后`
+            : `下一次通知在${diffHour}小时后`;
         } else {
-          status = '等待通知';
+          const remainHours = diffHour % 24;
+          status = remainHours > 0
+            ? `下一次通知在${diffDay}天${remainHours}小时后`
+            : `下一次通知在${diffDay}天后`;
         }
       } else {
         status = '等待通知';
@@ -143,17 +217,24 @@ router.get('/api/admin/timers', auth, adminOnly, (req, res) => {
           if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
         }
         const diffMs = next - now;
-        const diffMin = Math.round(diffMs / (1000 * 60));
-        const diffHour = Math.round(diffMs / (1000 * 60 * 60));
-        const diffDay = Math.round(diffMs / (1000 * 60 * 60 * 24));
-        if (diffMin < 60) {
+        const diffMin = Math.floor(diffMs / (1000 * 60));
+        const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        
+        if (diffMin < 1) {
+          status = '即将通知';
+        } else if (diffMin < 60) {
           status = `下一次通知在${diffMin}分钟后`;
         } else if (diffHour < 24) {
-          status = `下一次通知在${diffHour}小时后`;
-        } else if (diffDay >= 1) {
-          status = `下一次通知在${diffDay}天后`;
+          const remainMinutes = diffMin % 60;
+          status = remainMinutes > 0 
+            ? `下一次通知在${diffHour}小时${remainMinutes}分钟后`
+            : `下一次通知在${diffHour}小时后`;
         } else {
-          status = '等待通知';
+          const remainHours = diffHour % 24;
+          status = remainHours > 0
+            ? `下一次通知在${diffDay}天${remainHours}小时后`
+            : `下一次通知在${diffDay}天后`;
         }
       } else {
         status = '等待通知';
@@ -223,11 +304,17 @@ router.delete('/api/user/emails/:id', auth, (req, res) => {
 
 // 编辑倒计时
 router.put('/api/timers/:id', auth, (req, res) => {
-  const { title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null } = req.body;
-  db.run('UPDATE timers SET title = ?, end_time = ?, email_content = ?, repeat_type = ?, repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ?, bark_account_id = ? WHERE id = ? AND user_id = ?', [title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id, req.params.id, req.user.id], function(err) {
-    if (err) return res.status(500).json({ msg: '更新失败', error: err.message });
-    res.json({ msg: '更新成功' });
-  });
+  const {
+    title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null,
+    bark_title = null, bark_body = null, bark_group = null, bark_sound = null, bark_level = null, bark_copy = null, bark_url = null
+  } = req.body;
+  db.run('UPDATE timers SET title = ?, end_time = ?, email_content = ?, repeat_type = ?, repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ?, bark_account_id = ?, bark_title = ?, bark_body = ?, bark_group = ?, bark_sound = ?, bark_level = ?, bark_copy = ?, bark_url = ? WHERE id = ? AND user_id = ?',
+    [title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id, bark_title, bark_body, bark_group, bark_sound, bark_level, bark_copy, bark_url, req.params.id, req.user.id],
+    function(err) {
+      if (err) return res.status(500).json({ msg: '更新失败', error: err.message });
+      res.json({ msg: '更新成功' });
+    }
+  );
 });
 
 // 修改用户邮箱（admin）

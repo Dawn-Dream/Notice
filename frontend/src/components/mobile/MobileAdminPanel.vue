@@ -1,5 +1,5 @@
 <template>
-  <div class="admin-panel">
+  <div class="mobile-admin-panel">
     <div class="panel-header">
       <el-page-header @back="goBackHome" :title="'返回'" content="管理后台" />
       <el-tabs v-model="activeTab" class="header-tabs">
@@ -10,9 +10,10 @@
     </div>
 
     <div class="panel-content">
+      <!-- 用户管理 -->
       <div v-if="activeTab === 'users'">
         <div class="action-bar">
-          <el-button type="primary" @click="showAddUserDialog = true" class="add-button">
+          <el-button type="primary" @click="showAddUserDialog = true" size="small">
             <el-icon><Plus /></el-icon>新增用户
           </el-button>
         </div>
@@ -22,89 +23,76 @@
           style="width: 100%"
           :header-cell-style="{ background: '#f5f7fa' }"
           empty-text="这里空空如也哟"
+          size="small"
         >
-          <el-table-column prop="id" label="ID" width="80" align="left" header-align="left" />
-          <el-table-column prop="username" label="用户名" width="180" align="left" header-align="left" />
-          <el-table-column prop="email" label="邮箱" min-width="200" align="left" header-align="left" />
-          <el-table-column prop="is_admin" label="身份" width="100" align="center" header-align="center">
+          <el-table-column prop="username" label="用户名" min-width="120" />
+          <el-table-column prop="is_admin" label="身份" width="80" align="center">
             <template #default="scope">
-              <el-tag v-if="scope.row.is_admin" type="success">管理员</el-tag>
-              <el-tag v-else type="info">普通用户</el-tag>
+              <el-tag v-if="scope.row.is_admin" type="success" size="small">管理员</el-tag>
+              <el-tag v-else type="info" size="small">普通</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="340" fixed="right" header-align="center">
+          <el-table-column label="操作" width="120" fixed="right">
             <template #default="scope">
               <div class="action-buttons">
-                <el-button type="primary" @click="handleResetPassword(scope.row)" class="action-button">
-                  <el-icon><Key /></el-icon>
-                  重置密码
-                </el-button>
-                <el-button type="warning" @click="handleEditEmail(scope.row)" class="action-button">
-                  <el-icon><Message /></el-icon>
-                  修改邮箱
-                </el-button>
-                <el-button type="danger" @click="handleDeleteUser(scope.row)" class="action-button">
-                  <el-icon><Delete /></el-icon>
-                  删除
-                </el-button>
+                <el-dropdown trigger="click">
+                  <el-button type="primary" size="small">
+                    操作<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click="handleResetPassword(scope.row)">
+                        <el-icon><Key /></el-icon>重置密码
+                      </el-dropdown-item>
+                      <el-dropdown-item @click="handleEditEmail(scope.row)">
+                        <el-icon><Message /></el-icon>修改邮箱
+                      </el-dropdown-item>
+                      <el-dropdown-item @click="handleDeleteUser(scope.row)">
+                        <el-icon><Delete /></el-icon>删除用户
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
+      <!-- 倒计时管理 -->
       <div v-else-if="activeTab === 'countdowns'">
         <el-table 
           :data="countdowns" 
           style="width: 100%"
           :header-cell-style="{ background: '#f5f7fa' }"
           empty-text="这里空空如也哟"
+          size="small"
         >
-          <el-table-column prop="id" label="ID" width="80" align="left" header-align="left" />
-          <el-table-column prop="title" label="标题" min-width="180" align="left" header-align="left" />
-          <el-table-column prop="username" label="创建用户" width="120" align="left" header-align="left" />
-          <el-table-column prop="end_time" label="下次提醒时间" width="180" header-align="center">
+          <el-table-column prop="title" label="标题" min-width="120" />
+          <el-table-column prop="username" label="创建用户" width="100" />
+          <el-table-column prop="status" label="状态" width="100" align="center">
             <template #default="scope">
-              <span>{{ formatDate(scope.row.end_time) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="repeat_until" label="周期终止时间" width="180" header-align="center">
-            <template #default="scope">
-              <span v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none' && scope.row.repeat_until">
-                {{ formatDate(scope.row.repeat_until) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="status" label="状态" width="160" align="center" header-align="center">
-            <template #default="scope">
-              <el-tag :type="getStatusType(scope.row.status)">
+              <el-tag :type="getStatusType(scope.row.status)" size="small">
                 {{ formatStatus(scope.row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="repeat_type" label="周期" width="100" align="center" header-align="center">
+          <el-table-column label="操作" width="70" fixed="right">
             <template #default="scope">
-              <span v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none'">
-                每{{ scope.row.repeat_value || 1 }}{{ repeatTypeText(scope.row.repeat_type) }}
-              </span>
-              <span v-else>无</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="notify_email" label="通知邮箱" min-width="160" align="left" header-align="left" />
-          <el-table-column prop="bark_account_id" label="Bark账户ID" width="120" align="center" header-align="center" />
-          <el-table-column label="操作" width="120" fixed="right" align="center" header-align="center">
-            <template #default="scope">
-              <el-button type="danger" @click="handleDeleteCountdown(scope.row)" class="action-button">
-                <el-icon><Delete /></el-icon>
-                删除
-              </el-button>
+              <el-button 
+                type="danger" 
+                :icon="Delete" 
+                circle 
+                size="small"
+                @click="handleDeleteCountdown(scope.row)" 
+              />
             </template>
           </el-table-column>
         </el-table>
       </div>
 
+      <!-- 系统设置 -->
       <div v-else>
-        <!-- SMTP配置表单 -->
         <el-card class="smtp-config">
           <template #header>
             <div class="card-header">
@@ -113,28 +101,20 @@
                 <el-tag 
                   :type="serverConfigSource ? 'success' : 'info'" 
                   class="config-source-tag"
+                  size="small"
                 >
-                  服务器当前使用{{ serverConfigSource ? '环境变量' : '数据库' }}配置
+                  使用{{ serverConfigSource ? '环境变量' : '数据库' }}
                 </el-tag>
-                <el-button type="primary" @click="testSmtp" :loading="testing">
-                  测试配置
-                </el-button>
-                <el-button type="success" @click="saveConfig" :loading="saving">
-                  保存配置
-                </el-button>
               </div>
             </div>
           </template>
           
-          <el-form :model="smtpConfig" label-width="120px" :rules="smtpRules" ref="smtpFormRef">
+          <el-form :model="smtpConfig" label-width="90px" :rules="smtpRules" ref="smtpFormRef" size="large">
             <el-form-item label="配置来源" prop="use_env_config">
               <el-radio-group v-model="smtpConfig.use_env_config" @change="handleConfigSourceChange">
-                <el-radio :label="1">使用环境变量</el-radio>
-                <el-radio :label="0">使用数据库</el-radio>
+                <el-radio :label="1">环境变量</el-radio>
+                <el-radio :label="0">数据库</el-radio>
               </el-radio-group>
-              <el-tooltip content="环境变量配置优先级更高，适合生产环境；数据库配置方便调试" placement="top">
-                <el-icon class="config-help"><QuestionFilled /></el-icon>
-              </el-tooltip>
             </el-form-item>
 
             <template v-if="smtpConfig.use_env_config">
@@ -149,49 +129,24 @@
             </template>
             
             <template v-else>
-              <el-form-item label="SMTP服务器" prop="host">
+              <el-form-item label="服务器" prop="host">
                 <el-input 
                   v-model="smtpConfig.host" 
                   name="host"
                   placeholder="例如：smtp.gmail.com"
-                >
-                  <template #append>
-                    <el-tooltip content="常见SMTP服务器配置参考" placement="top">
-                      <el-button @click="showSmtpHelp">
-                        <el-icon><QuestionFilled /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                  </template>
-                </el-input>
+                />
               </el-form-item>
               
               <el-form-item label="端口" prop="port">
-                <el-input 
-                  v-model="smtpConfig.port" 
-                  name="port"
-                  placeholder="例如：587"
-                >
-                  <template #append>
-                    <el-select 
-                      v-model="smtpConfig.port" 
-                      style="width: 100px"
-                    >
-                      <el-option label="25 (SMTP)" value="25" />
-                      <el-option label="465 (SMTPS)" value="465" />
-                      <el-option label="587 (STARTTLS)" value="587" />
-                    </el-select>
-                  </template>
-                </el-input>
+                <el-select v-model="smtpConfig.port" style="width: 100%">
+                  <el-option label="25 (SMTP)" value="25" />
+                  <el-option label="465 (SMTPS)" value="465" />
+                  <el-option label="587 (STARTTLS)" value="587" />
+                </el-select>
               </el-form-item>
               
               <el-form-item label="安全连接" prop="secure">
-                <el-switch 
-                  v-model="smtpConfig.secure" 
-                  name="secure"
-                />
-                <span class="form-tip">
-                  端口465通常需要启用，端口587通常不需要
-                </span>
+                <el-switch v-model="smtpConfig.secure" />
               </el-form-item>
               
               <el-form-item label="用户名" prop="username">
@@ -209,18 +164,10 @@
                   type="password" 
                   placeholder="密码或授权码" 
                   show-password
-                >
-                  <template #append>
-                    <el-tooltip content="如何获取授权码？" placement="top">
-                      <el-button @click="showAuthHelp">
-                        <el-icon><QuestionFilled /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                  </template>
-                </el-input>
+                />
               </el-form-item>
               
-              <el-form-item label="发件人名称" prop="from_name">
+              <el-form-item label="发件人" prop="from_name">
                 <el-input 
                   v-model="smtpConfig.from_name" 
                   name="from_name"
@@ -228,6 +175,15 @@
                 />
               </el-form-item>
             </template>
+
+            <el-form-item>
+              <el-button type="primary" @click="testSmtp" :loading="testing">
+                测试配置
+              </el-button>
+              <el-button type="success" @click="saveConfig" :loading="saving">
+                保存配置
+              </el-button>
+            </el-form-item>
           </el-form>
         </el-card>
       </div>
@@ -237,9 +193,9 @@
     <el-dialog
       v-model="showAddUserDialog"
       title="新增用户"
-      width="500px"
+      width="90%"
     >
-      <el-form :model="newUser" :rules="rules" ref="addUserFormRef" label-width="80px">
+      <el-form :model="newUser" :rules="rules" ref="addUserFormRef" label-width="70px" size="large">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="newUser.username" />
         </el-form-item>
@@ -250,7 +206,7 @@
           <el-input v-model="newUser.email" />
         </el-form-item>
         <el-form-item label="身份" prop="is_admin">
-          <el-select v-model="newUser.is_admin">
+          <el-select v-model="newUser.is_admin" style="width: 100%">
             <el-option :label="'普通用户'" :value="0" />
             <el-option :label="'管理员'" :value="1" />
           </el-select>
@@ -266,12 +222,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Plus, Delete, Message, Key, ArrowDown, QuestionFilled } from '@element-plus/icons-vue';
+import { Plus, Delete, Message, Key, ArrowDown } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import axios from 'axios';
 import { useRouter } from 'vue-router';
-
-const router = useRouter();
 
 const props = defineProps({
   token: String
@@ -283,7 +237,7 @@ const countdowns = ref([]);
 const showAddUserDialog = ref(false);
 const saving = ref(false);
 const testing = ref(false);
-const isEnvConfig = ref(false);
+const serverConfigSource = ref(1);
 
 const newUser = ref({
   username: '',
@@ -301,9 +255,6 @@ const smtpConfig = ref({
   from_name: '倒计时提醒助手',
   use_env_config: 1
 });
-
-// 添加新的状态来跟踪服务器实际使用的配置来源
-const serverConfigSource = ref(1); // 默认使用环境变量
 
 const rules = {
   username: [
@@ -331,7 +282,8 @@ const smtpRules = {
 const addUserFormRef = ref(null);
 const smtpFormRef = ref(null);
 
-// 获取用户列表
+const router = useRouter();
+
 async function fetchUsers() {
   try {
     const res = await axios.get('/api/admin/users', {
@@ -343,7 +295,6 @@ async function fetchUsers() {
   }
 }
 
-// 获取倒计时列表
 async function fetchCountdowns() {
   try {
     const res = await axios.get('/api/admin/timers', {
@@ -355,7 +306,6 @@ async function fetchCountdowns() {
   }
 }
 
-// 加载SMTP配置
 async function loadConfig() {
   try {
     const response = await fetch('/api/admin/smtp', {
@@ -365,10 +315,8 @@ async function loadConfig() {
     });
     const data = await response.json();
     if (data) {
-      // 更新服务器实际使用的配置来源
       serverConfigSource.value = data.use_env_config;
 
-      // 检查环境变量配置是否完整
       if (data.use_env_config && (!data.host || !data.username)) {
         ElMessage.warning('环境变量配置不完整，已自动切换到数据库配置');
         data.use_env_config = 0;
@@ -379,22 +327,18 @@ async function loadConfig() {
         port: data.port || '465',
         secure: data.secure ?? true,
         username: data.username || '',
-        password: '', // 出于安全考虑，不显示已保存的密码
+        password: '',
         from_name: data.from_name || '',
         use_env_config: Number(data.use_env_config)
       };
     }
   } catch (error) {
-    console.error('加载配置失败:', error);
     ElMessage.error('加载配置失败：' + (error.response?.data?.msg || error.message));
   }
 }
 
-// 处理配置来源切换
 async function handleConfigSourceChange(value) {
-  
   if (value === 1) {
-    // 切换到环境变量配置
     try {
       const response = await fetch('/api/admin/smtp', {
         headers: { 
@@ -407,60 +351,22 @@ async function handleConfigSourceChange(value) {
         smtpConfig.value.use_env_config = 0;
         return;
       }
-      // 加载环境变量配置
       Object.assign(smtpConfig.value, {
         host: data.host || '',
         port: data.port || '465',
         secure: data.secure ?? true,
         username: data.username || '',
-        password: '', // 出于安全考虑，不显示密码
+        password: '',
         from_name: data.from_name || '',
         use_env_config: 1
       });
-      
-      // 禁用相关表单项
-      if (smtpFormRef.value) {
-        const formItems = smtpFormRef.value.$el.querySelectorAll('.el-form-item');
-        ['host', 'port', 'secure', 'username', 'password'].forEach(field => {
-          const formItem = Array.from(formItems).find(item => 
-            item.querySelector(`[name="${field}"]`) || 
-            item.querySelector(`[data-field="${field}"]`)
-          );
-          if (formItem) {
-            const input = formItem.querySelector('input, select');
-            if (input) {
-              input.disabled = true;
-            }
-          }
-        });
-      }
     } catch (error) {
-      console.error('获取环境变量配置失败:', error);
       ElMessage.error('获取环境变量配置失败，请检查服务器配置');
       smtpConfig.value.use_env_config = 0;
-    }
-  } else {
-    // 切换到数据库配置
-    // 启用所有表单项
-    if (smtpFormRef.value) {
-      const formItems = smtpFormRef.value.$el.querySelectorAll('.el-form-item');
-      ['host', 'port', 'secure', 'username', 'password'].forEach(field => {
-        const formItem = Array.from(formItems).find(item => 
-          item.querySelector(`[name="${field}"]`) || 
-          item.querySelector(`[data-field="${field}"]`)
-        );
-        if (formItem) {
-          const input = formItem.querySelector('input, select');
-          if (input) {
-            input.disabled = false;
-          }
-        }
-      });
     }
   }
 }
 
-// 保存SMTP配置
 async function saveConfig() {
   if (!smtpFormRef.value) return;
   
@@ -470,7 +376,6 @@ async function saveConfig() {
     }
     saving.value = true;
     
-    // 根据配置来源准备保存数据
     const dataToSave = smtpConfig.value.use_env_config ? {
       use_env_config: 1,
       from_name: smtpConfig.value.from_name
@@ -479,7 +384,7 @@ async function saveConfig() {
       port: smtpConfig.value.port,
       secure: smtpConfig.value.secure,
       username: smtpConfig.value.username,
-      password: smtpConfig.value.password || undefined, // 如果密码为空，则不更新
+      password: smtpConfig.value.password || undefined,
       from_name: smtpConfig.value.from_name,
       use_env_config: 0
     };
@@ -496,7 +401,7 @@ async function saveConfig() {
     const data = await response.json();
     if (data.success) {
       ElMessage.success(data.msg || '保存成功');
-      await loadConfig(); // 重新加载配置
+      await loadConfig();
     } else {
       ElMessage.error(data.msg || '保存失败');
     }
@@ -507,7 +412,6 @@ async function saveConfig() {
   }
 }
 
-// 测试SMTP配置
 async function testSmtp() {
   if (!smtpFormRef.value) return;
   
@@ -517,7 +421,6 @@ async function testSmtp() {
     return;
   }
   
-  // 如果使用数据库配置，先保存当前配置
   if (!smtpConfig.value.use_env_config) {
     try {
       const saveResponse = await fetch('/api/admin/smtp', {
@@ -543,7 +446,6 @@ async function testSmtp() {
     }
   }
   
-  // 弹窗输入测试邮箱
   try {
     const { value: email } = await ElMessageBox.prompt('请输入测试邮箱地址', '发送测试邮件', {
       confirmButtonText: '发送',
@@ -581,53 +483,6 @@ async function testSmtp() {
   }
 }
 
-// 显示SMTP帮助
-function showSmtpHelp() {
-  ElMessageBox.alert(`
-    常见邮箱SMTP配置：
-    
-    1. Gmail
-    - 服务器：smtp.gmail.com
-    - 端口：587
-    - 安全连接：否
-    
-    2. QQ邮箱
-    - 服务器：smtp.qq.com
-    - 端口：465
-    - 安全连接：是
-    
-    3. 163邮箱
-    - 服务器：smtp.163.com
-    - 端口：465
-    - 安全连接：是
-    
-    4. Outlook/Hotmail
-    - 服务器：smtp.office365.com
-    - 端口：587
-    - 安全连接：否
-  `.trim(), 'SMTP服务器配置参考');
-}
-
-// 显示授权码帮助
-function showAuthHelp() {
-  ElMessageBox.alert(`
-    大多数邮箱服务商出于安全考虑，都需要使用授权码而不是密码来发送邮件：
-    
-    1. QQ邮箱
-    - 设置 -> 账户 -> POP3/SMTP服务 -> 开启 -> 生成授权码
-    
-    2. Gmail
-    - Google账户设置 -> 安全性 -> 2步验证 -> 应用专用密码
-    
-    3. 163邮箱
-    - 设置 -> POP3/SMTP/IMAP -> 开启 -> 授权码
-    
-    4. Outlook
-    - 需要使用Microsoft账户密码
-  `.trim(), '如何获取授权码？');
-}
-
-// 添加用户
 async function handleAddUser() {
   try {
     await addUserFormRef.value.validate();
@@ -643,7 +498,6 @@ async function handleAddUser() {
   }
 }
 
-// 重置密码
 async function handleResetPassword(user) {
   try {
     const { value: newPassword } = await ElMessageBox.prompt(
@@ -671,7 +525,6 @@ async function handleResetPassword(user) {
   }
 }
 
-// 修改邮箱
 async function handleEditEmail(user) {
   try {
     const { value: newEmail } = await ElMessageBox.prompt(
@@ -700,7 +553,6 @@ async function handleEditEmail(user) {
   }
 }
 
-// 删除用户
 async function handleDeleteUser(user) {
   try {
     await ElMessageBox.confirm(
@@ -725,7 +577,6 @@ async function handleDeleteUser(user) {
   }
 }
 
-// 删除倒计时
 async function handleDeleteCountdown(countdown) {
   try {
     await ElMessageBox.confirm(
@@ -750,27 +601,6 @@ async function handleDeleteCountdown(countdown) {
   }
 }
 
-// 工具函数：格式化日期
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  return d.toLocaleString();
-}
-
-// 工具函数：周期类型转中文
-function repeatTypeText(type) {
-  switch(type) {
-    case 'minute': return '分钟';
-    case 'hour': return '小时';
-    case 'day': return '天';
-    case 'month': return '月';
-    case 'year': return '年';
-    default: return '';
-  }
-}
-
-// 工具函数：状态类型判断
 const getStatusType = (status) => {
   if (status === '已通知') return 'success';
   if (status.includes('分钟后')) return 'danger';
@@ -779,7 +609,6 @@ const getStatusType = (status) => {
   return 'info';
 };
 
-// 工具函数：状态文本格式化
 const formatStatus = (status) => {
   return status.replace('下一次通知在', '');
 };
@@ -796,63 +625,54 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-.admin-panel {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+.mobile-admin-panel {
+  padding: 10px;
   
   .panel-header {
     margin-bottom: 20px;
-  }
-  
-  .header-tabs {
-    margin-top: 20px;
+    
+    .header-tabs {
+      margin-top: 15px;
+    }
   }
   
   .action-bar {
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     display: flex;
     justify-content: flex-end;
   }
   
   .action-buttons {
     display: flex;
-    gap: 10px;
     justify-content: center;
   }
   
-  .action-button {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-  
   .smtp-config {
-    max-width: 800px;
-    margin: 20px auto;
+    margin-top: 15px;
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    
+    .config-source-tag {
+      margin-right: 10px;
+    }
   }
-  
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+
+  :deep(.el-form-item__label) {
+    font-size: 14px;
   }
-  
-  .form-tip {
-    margin-left: 10px;
-    color: #909399;
+
+  :deep(.el-input__wrapper),
+  :deep(.el-textarea__inner) {
+    font-size: 14px;
+  }
+
+  :deep(.el-table) {
     font-size: 13px;
   }
-
-  .config-help {
-    margin-left: 8px;
-    color: #909399;
-    cursor: pointer;
-  }
-
-  .config-source-tag {
-    margin-right: 10px;
-  }
 }
-</style>
+</style> 

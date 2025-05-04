@@ -60,82 +60,92 @@ async function insertDefaultSmtpConfig() {
   });
 }
 
-db.serialize(() => {
-  // 用户表
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    email TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    is_admin INTEGER DEFAULT 0
-  )`);
+async function initDatabase() {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      // 用户表
+      db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0
+      )`);
 
-  // 倒计时表
-  db.run(`CREATE TABLE IF NOT EXISTS timers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    email_content TEXT,
-    repeat_type TEXT DEFAULT 'none',
-    repeat_until TEXT,
-    repeat_value INTEGER DEFAULT 1,
-    notify_email TEXT,
-    notified INTEGER DEFAULT 0,
-    bark_account_id INTEGER,
-    bark_title TEXT,
-    bark_body TEXT,
-    bark_group TEXT,
-    bark_sound TEXT,
-    bark_level TEXT,
-    bark_copy TEXT,
-    bark_url TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (bark_account_id) REFERENCES user_bark_accounts(id) ON DELETE SET NULL
-  )`);
+      // 倒计时表
+      db.run(`CREATE TABLE IF NOT EXISTS timers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        email_content TEXT,
+        repeat_type TEXT DEFAULT 'none',
+        repeat_until TEXT,
+        repeat_value INTEGER DEFAULT 1,
+        notify_email TEXT,
+        notified INTEGER DEFAULT 0,
+        bark_account_id INTEGER,
+        bark_title TEXT,
+        bark_body TEXT,
+        bark_group TEXT,
+        bark_sound TEXT,
+        bark_level TEXT,
+        bark_copy TEXT,
+        bark_url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (bark_account_id) REFERENCES user_bark_accounts(id) ON DELETE SET NULL
+      )`);
 
-  // 用户邮箱表
-  db.run(`CREATE TABLE IF NOT EXISTS user_emails (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    email TEXT NOT NULL,
-    UNIQUE(user_id, email),
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  )`);
+      // 用户邮箱表
+      db.run(`CREATE TABLE IF NOT EXISTS user_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        email TEXT NOT NULL,
+        UNIQUE(user_id, email),
+        FOREIGN KEY(user_id) REFERENCES users(id)
+      )`);
 
-  // SMTP配置表
-  db.run(`CREATE TABLE IF NOT EXISTS smtp_config (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    host TEXT NOT NULL DEFAULT 'smtp.example.com',
-    port TEXT NOT NULL DEFAULT '587',
-    secure INTEGER DEFAULT 0,
-    username TEXT NOT NULL DEFAULT 'user@example.com',
-    password TEXT NOT NULL DEFAULT 'password',
-    from_name TEXT DEFAULT '倒计时提醒助手',
-    use_env_config INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+      // SMTP配置表
+      db.run(`CREATE TABLE IF NOT EXISTS smtp_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host TEXT NOT NULL DEFAULT 'smtp.example.com',
+        port TEXT NOT NULL DEFAULT '587',
+        secure INTEGER DEFAULT 0,
+        username TEXT NOT NULL DEFAULT 'user@example.com',
+        password TEXT NOT NULL DEFAULT 'password',
+        from_name TEXT DEFAULT '倒计时提醒助手',
+        use_env_config INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
 
-  // 用户Bark账户表
-  db.run(`CREATE TABLE IF NOT EXISTS user_bark_accounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    base_url TEXT NOT NULL,
-    api_key TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  )`);
+      // 用户Bark账户表
+      db.run(`CREATE TABLE IF NOT EXISTS user_bark_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+      )`);
 
-  db.run(`ALTER TABLE timers ADD COLUMN notify_email TEXT;`, err => {});
-  db.run(`ALTER TABLE timers ADD COLUMN last_notified_at TEXT;`, err => {});
-  db.run(`ALTER TABLE timers ADD COLUMN bark_account_id INTEGER;`, err => {});
+      // 兼容旧表结构
+      db.run(`ALTER TABLE timers ADD COLUMN notify_email TEXT;`, err => {});
+      db.run(`ALTER TABLE timers ADD COLUMN last_notified_at TEXT;`, err => {});
+      db.run(`ALTER TABLE timers ADD COLUMN bark_account_id INTEGER;`, err => {});
 
-  // 新增：插入admin账号和默认SMTP配置
-  Promise.all([
-    insertAdmin(),
-    insertDefaultSmtpConfig()
-  ]).then(() => db.close());
-}); 
+      // 插入admin账号和默认SMTP配置
+      Promise.all([
+        insertAdmin(),
+        insertDefaultSmtpConfig()
+      ]).then(() => {
+        resolve();
+      }).catch(reject);
+    });
+  });
+}
+
+module.exports = { initDatabase }; 
+

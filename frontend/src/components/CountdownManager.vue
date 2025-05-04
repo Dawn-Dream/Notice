@@ -248,7 +248,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Delete,
@@ -608,17 +608,43 @@ function handleBack() {
   router.push('/');
 }
 
-onMounted(() => {
-  fetchUserInfo();
-  fetchEmails();
-  fetchCountdowns();
-  fetchBarkAccounts();
-  intervalId = setInterval(fetchCountdowns, 10000);
-});
+onMounted(async () => {
+  if (localStorage.getItem('token')) {
+    await fetchUserInfo()
+    await fetchCountdowns()
+    await fetchEmails()
+    await fetchBarkAccounts()
+    // 启动定时刷新
+    intervalId = setInterval(fetchCountdowns, 10000)
+  }
+})
+
+// 添加 watch 监听 token 变化
+watch(() => localStorage.getItem('token'), (newToken) => {
+  if (newToken) {
+    fetchUserInfo()
+    fetchCountdowns()
+    fetchEmails()
+    fetchBarkAccounts()
+    // 如果没有定时器，启动定时刷新
+    if (!intervalId) {
+      intervalId = setInterval(fetchCountdowns, 10000)
+    }
+  } else {
+    // token被清除时，清除定时器
+    if (intervalId) {
+      clearInterval(intervalId)
+      intervalId = null
+    }
+  }
+})
 
 onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId);
-});
+  if (intervalId) {
+    clearInterval(intervalId)
+    intervalId = null
+  }
+})
 
 const getStatusType = (status) => {
   if (status === '已通知') return 'success';
@@ -636,7 +662,7 @@ const formatStatus = (status) => {
 <style lang="scss" scoped>
 .countdown-manager {
   min-height: 100vh;
-  background: #f6fafb;
+  background: #F6F6F6;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -745,7 +771,7 @@ const formatStatus = (status) => {
 
 <style scoped>
 .usage-tip .el-alert {
-  background: #e6f7ff !important;
+  background: #00a0eb !important;
   color: #222 !important;
   border-radius: 8px;
   box-shadow: 0 2px 8px 0 rgba(0,0,0,0.04);

@@ -1,5 +1,5 @@
 <template>
-  <div class="login-register">
+  <div class="mobile-login-register">
     <el-tabs v-model="mode" class="demo-tabs">
       <el-tab-pane label="登录" name="login">
         <el-form
@@ -7,6 +7,7 @@
           :model="loginForm"
           :rules="loginRules"
           @submit.prevent
+          size="large"
         >
           <el-form-item prop="username">
             <el-input
@@ -38,6 +39,7 @@
           :model="registerForm"
           :rules="registerRules"
           @submit.prevent
+          size="large"
         >
           <el-form-item prop="username">
             <el-input
@@ -195,12 +197,12 @@ async function handleRegister() {
           email: registerForm.email
         });
         ElMessage.success('注册成功，请登录');
-      mode.value = 'login';
+        mode.value = 'login';
         registerForm.username = '';
         registerForm.password = '';
         registerForm.confirmPassword = '';
         registerForm.email = '';
-  } catch (e) {
+      } catch (e) {
         ElMessage.error(e.response?.data?.msg || '注册失败');
       } finally {
         loading.value = false;
@@ -211,11 +213,12 @@ async function handleRegister() {
 </script>
 
 <style lang="scss" scoped>
-.login-register {
-  padding: 20px;
+.mobile-login-register {
+  padding: 15px;
   
   .submit-btn {
     width: 100%;
+    margin-top: 10px;
   }
   
   :deep(.el-tabs__nav) {
@@ -230,6 +233,14 @@ async function handleRegister() {
   
   .el-form-item {
     margin-bottom: 20px;
+  }
+
+  :deep(.el-input__wrapper) {
+    padding: 1px 15px;
+  }
+
+  :deep(.el-input__inner) {
+    height: 42px;
   }
 }
 </style> 

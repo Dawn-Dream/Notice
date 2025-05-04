@@ -28,7 +28,11 @@ router.post('/api/login', (req, res) => {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(400).json({ msg: '密码错误' });
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token });
+    res.json({ 
+      token,
+      username: user.username,
+      is_admin: user.is_admin
+    });
   });
 });
 
@@ -45,10 +49,12 @@ function auth(req, res, next) {
 
 // 管理员鉴权
 function adminOnly(req, res, next) {
-  if (!req.user || req.user.username !== 'admin') {
-    return res.status(403).json({ msg: '无权限' });
-  }
-  next();
+  db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
+    if (err || !user || !user.is_admin) {
+      return res.status(403).json({ msg: '无权限' });
+    }
+    next();
+  });
 }
 
 // 新建倒计时

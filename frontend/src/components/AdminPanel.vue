@@ -63,14 +63,35 @@
           <el-table-column prop="id" label="ID" width="80" align="left" header-align="left" />
           <el-table-column prop="title" label="标题" min-width="180" align="left" header-align="left" />
           <el-table-column prop="username" label="创建用户" width="120" align="left" header-align="left" />
-          <el-table-column prop="targetDate" label="目标日期" width="180" header-align="center" />
-          <el-table-column prop="status" label="状态" width="100" align="center" header-align="center">
+          <el-table-column prop="end_time" label="下次提醒时间" width="180" header-align="center">
             <template #default="scope">
-              <el-tag :type="scope.row.status === 'active' ? 'success' : 'info'">
-                {{ scope.row.status === 'active' ? '活跃' : '已完成' }}
+              <span>{{ formatDate(scope.row.end_time) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="repeat_until" label="周期终止时间" width="180" header-align="center">
+            <template #default="scope">
+              <span v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none' && scope.row.repeat_until">
+                {{ formatDate(scope.row.repeat_until) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="160" align="center" header-align="center">
+            <template #default="scope">
+              <el-tag :type="getStatusType(scope.row.status)">
+                {{ formatStatus(scope.row.status) }}
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="repeat_type" label="周期" width="100" align="center" header-align="center">
+            <template #default="scope">
+              <span v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none'">
+                每{{ scope.row.repeat_value || 1 }}{{ repeatTypeText(scope.row.repeat_type) }}
+              </span>
+              <span v-else>无</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="notify_email" label="通知邮箱" min-width="160" align="left" header-align="left" />
+          <el-table-column prop="bark_account_id" label="Bark账户ID" width="120" align="center" header-align="center" />
           <el-table-column label="操作" width="120" fixed="right" align="center" header-align="center">
             <template #default="scope">
               <el-button type="danger" @click="handleDeleteCountdown(scope.row)" class="action-button">
@@ -725,6 +746,40 @@ async function handleDeleteCountdown(countdown) {
     }
   }
 }
+
+// 工具函数：格式化日期
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleString();
+}
+
+// 工具函数：周期类型转中文
+function repeatTypeText(type) {
+  switch(type) {
+    case 'minute': return '分钟';
+    case 'hour': return '小时';
+    case 'day': return '天';
+    case 'month': return '月';
+    case 'year': return '年';
+    default: return '';
+  }
+}
+
+// 工具函数：状态类型判断
+const getStatusType = (status) => {
+  if (status === '已通知') return 'success';
+  if (status.includes('分钟后')) return 'danger';
+  if (status.includes('小时后')) return 'warning';
+  if (status.includes('天后')) return 'info';
+  return 'info';
+};
+
+// 工具函数：状态文本格式化
+const formatStatus = (status) => {
+  return status.replace('下一次通知在', '');
+};
 
 onMounted(() => {
   fetchUsers();

@@ -235,10 +235,15 @@ setInterval(() => {
           db.get('SELECT * FROM user_bark_accounts WHERE id = ?', [timer.bark_account_id], async (err, barkAcc) => {
             if (!err && barkAcc) {
               const client = new BarkClient({ baseUrl: barkAcc.base_url, key: barkAcc.api_key });
-              const payload = {
-                body: timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`,
-                title: timer.title
-              };
+              // 组装 payload，优先用高级参数，否则用默认
+              const payload = {};
+              payload.body = timer.bark_body || timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`;
+              payload.title = timer.bark_title || timer.title;
+              if (timer.bark_group) payload.group = timer.bark_group;
+              if (timer.bark_sound) payload.sound = timer.bark_sound;
+              if (timer.bark_level) payload.level = timer.bark_level;
+              if (timer.bark_copy) payload.copy = timer.bark_copy;
+              if (timer.bark_url) payload.url = timer.bark_url;
               try {
                 await client.pushMessage(payload);
                 console.log(`Bark推送成功：${timer.title}`);

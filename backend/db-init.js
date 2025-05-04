@@ -80,11 +80,20 @@ db.serialize(() => {
     repeat_type TEXT DEFAULT 'none',
     repeat_until TEXT,
     repeat_value INTEGER DEFAULT 1,
-    notified INTEGER DEFAULT 0,
     notify_email TEXT,
-    last_notified_at TEXT,
+    notified INTEGER DEFAULT 0,
     bark_account_id INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    bark_title TEXT,
+    bark_body TEXT,
+    bark_group TEXT,
+    bark_sound TEXT,
+    bark_level TEXT,
+    bark_copy TEXT,
+    bark_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (bark_account_id) REFERENCES user_bark_accounts(id) ON DELETE SET NULL
   )`);
 
   // 用户邮箱表

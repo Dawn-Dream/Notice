@@ -20,9 +20,16 @@
             class="main-table"
           >
             <el-table-column prop="title" label="标题" min-width="120" align="center" />
-            <el-table-column label="时间" min-width="180" align="center">
+            <el-table-column label="下次提醒时间" min-width="180" align="center">
               <template #default="scope">
                 {{ formatTime(scope.row.end_time) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="周期终止时间" min-width="180" align="center">
+              <template #default="scope">
+                <span v-if="scope.row.repeat_type && scope.row.repeat_type !== 'none' && scope.row.repeat_until">
+                  {{ formatTime(scope.row.repeat_until) }}
+                </span>
               </template>
             </el-table-column>
             <el-table-column align="center" label="周期" min-width="100">
@@ -35,7 +42,9 @@
             </el-table-column>
             <el-table-column label="状态" align="center" min-width="120">
               <template #default="scope">
-                <el-tag>{{ scope.row.status }}</el-tag>
+                <el-tag :type="getStatusType(scope.row.status)">
+                  {{ formatStatus(scope.row.status) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column align="center" label="操作" width="120">
@@ -104,17 +113,25 @@
           />
         </el-form-item>
         
-        <el-form-item label="目标时间" prop="target_time">
+        <el-form-item v-if="form.type === 'once'" label="截止时间" prop="target_time">
           <el-date-picker
             v-model="form.target_time"
             type="datetime"
-            placeholder="选择日期时间"
+            placeholder="选择截止时间"
             format="YYYY-MM-DD HH:mm"
             value-format="YYYY-MM-DD HH:mm"
           />
         </el-form-item>
-        
-        <template v-if="form.type === 'cycle'">
+        <template v-else>
+          <el-form-item label="首次提醒时间" prop="target_time">
+            <el-date-picker
+              v-model="form.target_time"
+              type="datetime"
+              placeholder="选择首次提醒时间"
+              format="YYYY-MM-DD HH:mm"
+              value-format="YYYY-MM-DD HH:mm"
+            />
+          </el-form-item>
           <el-form-item label="重复间隔" prop="repeat_value">
             <div class="repeat-interval-row">
               <el-input-number
@@ -134,17 +151,16 @@
               </el-select>
             </div>
           </el-form-item>
-          
-          <el-form-item label="截止时间" prop="repeat_until">
+          <el-form-item label="周期终止时间" prop="repeat_until">
             <el-date-picker
               v-model="form.repeat_until"
               type="datetime"
-              placeholder="选择截止时间（可选）"
+              placeholder="选择周期终止时间（可选）"
               format="YYYY-MM-DD HH:mm"
               value-format="YYYY-MM-DD HH:mm"
             />
           </el-form-item>
-      </template>
+        </template>
         
         <el-form-item label="通知邮箱" prop="notify_email">
           <el-select v-model="form.notify_email">
@@ -166,6 +182,56 @@
             <el-option v-for="b in barkAccounts" :key="b.id" :label="b.name + ' - ' + b.base_url" :value="b.id" />
           </el-select>
         </el-form-item>
+        <el-form-item>
+          <el-button type="text" @click="showBarkAdvanced = !showBarkAdvanced">
+            {{ showBarkAdvanced ? '收起高级Bark推送设置' : '展开高级Bark推送设置' }}
+          </el-button>
+        </el-form-item>
+        <template v-if="showBarkAdvanced">
+          <el-form-item label="推送标题">
+            <el-input v-model="form.bark_title" placeholder="不填则默认倒计时标题" />
+          </el-form-item>
+          <el-form-item label="推送副标题">
+            <el-input v-model="form.bark_body" placeholder="不填则默认提醒内容" />
+          </el-form-item>
+          <el-form-item label="分组">
+            <el-input v-model="form.bark_group" placeholder="如：工作/生活/自定义" />
+          </el-form-item>
+          <el-form-item label="铃声">
+            <el-select v-model="form.bark_sound" clearable placeholder="默认">
+              <el-option label="默认" value="" />
+              <el-option label="alarm" value="alarm" />
+              <el-option label="bell" value="bell" />
+              <el-option label="birdsong" value="birdsong" />
+              <el-option label="calypso" value="calypso" />
+              <el-option label="glass" value="glass" />
+              <el-option label="minuet" value="minuet" />
+              <el-option label="electronic" value="electronic" />
+              <el-option label="anticipate" value="anticipate" />
+              <el-option label="shake" value="shake" />
+              <el-option label="synth" value="synth" />
+              <el-option label="pulse" value="pulse" />
+              <el-option label="telegraph" value="telegraph" />
+              <el-option label="up" value="up" />
+              <el-option label="bark" value="bark" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="推送中断级别">
+            <el-select v-model="form.bark_level" clearable placeholder="默认">
+              <el-option label="默认" value="" />
+              <el-option label="主动（active）" value="active" />
+              <el-option label="时效（timeSensitive）" value="timeSensitive" />
+              <el-option label="被动（passive）" value="passive" />
+              <el-option label="重要警告（critical，静音下也响铃）" value="critical" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="自动复制内容">
+            <el-input v-model="form.bark_copy" placeholder="推送时自动复制到剪贴板" />
+          </el-form-item>
+          <el-form-item label="URL跳转">
+            <el-input v-model="form.bark_url" placeholder="推送点击后跳转的URL" />
+          </el-form-item>
+        </template>
       </el-form>
       
       <template #footer>
@@ -205,6 +271,7 @@ const editing = ref(false);
 const editId = ref(null);
 let intervalId = null;
 const router = useRouter();
+const showBarkAdvanced = ref(false);
 
 const form = reactive({
   type: 'once',
@@ -215,13 +282,20 @@ const form = reactive({
   repeat_unit: 'day',
   repeat_until: '',
   notify_email: '',
-  bark_account_id: null
+  bark_account_id: null,
+  bark_title: '',
+  bark_body: '',
+  bark_group: '',
+  bark_sound: '',
+  bark_level: '',
+  bark_copy: '',
+  bark_url: ''
 });
 
 const rules = {
   title: [
     { required: true, message: '请输入标题', trigger: 'blur' },
-    { min: 1, max: 50, message: '长度在 1 到 50 个字符', trigger: 'blur' }
+    { min: 1, max: 100, message: '长度在 1 到 100 个字符', trigger: 'blur' }
   ],
   target_time: [
     { required: true, message: '请选择目标时间', trigger: 'change' }
@@ -309,42 +383,58 @@ async function fetchUserInfo() {
 async function handleSubmit() {
   if (!formRef.value) return;
   
-  await formRef.value.validate(async (valid) => {
-    if (valid) {
-      try {
-        const data = {
-          title: form.title,
-          end_time: new Date(form.target_time).toISOString(),
-          email_content: form.email_content,
-          repeat_type: form.type === 'cycle' ? form.repeat_unit : 'none',
-          repeat_value: form.type === 'cycle' ? form.repeat_value : 1,
-          repeat_until: form.type === 'cycle' && form.repeat_until
-            ? new Date(form.repeat_until).toISOString()
-            : null,
-          notify_email: form.notify_email,
-          bark_account_id: form.bark_account_id
-        };
+  try {
+    await formRef.value.validate();
+    
+    const data = {
+      title: form.title.trim(),
+      end_time: new Date(form.target_time).toISOString(),
+      email_content: form.email_content?.trim() || form.title.trim(), // 如果没填内容，默认使用标题
+      repeat_type: form.type === 'cycle' ? form.repeat_unit : 'none',
+      repeat_value: form.type === 'cycle' ? (form.repeat_value || 1) : 1,
+      repeat_until: form.type === 'cycle' && form.repeat_until
+        ? new Date(form.repeat_until).toISOString()
+        : null,
+      notify_email: form.notify_email,
+      bark_account_id: form.bark_account_id || null,
+      bark_title: form.bark_title?.trim() || null,
+      bark_body: form.bark_body?.trim() || null,
+      bark_group: form.bark_group?.trim() || null,
+      bark_sound: form.bark_sound || null,
+      bark_level: form.bark_level || null,
+      bark_copy: form.bark_copy?.trim() || null,
+      bark_url: form.bark_url?.trim() || null
+    };
 
-        if (editing.value) {
-          await axios.put(`/api/timers/${editId.value}`, data, {
-            headers: { Authorization: `Bearer ${props.token}` }
-          });
-          ElMessage.success('更新成功');
-        } else {
-          await axios.post('/api/timers', data, {
-            headers: { Authorization: `Bearer ${props.token}` }
-          });
-          ElMessage.success('添加成功');
-        }
-        
-        dialogVisible.value = false;
-        resetForm();
-  fetchCountdowns();
-      } catch (error) {
-        ElMessage.error(error.response?.data?.msg || '操作失败');
+    if (editing.value) {
+      await axios.put(`/api/timers/${editId.value}`, data, {
+        headers: { Authorization: `Bearer ${props.token}` }
+      });
+      ElMessage.success('更新成功');
+    } else {
+      const response = await axios.post('/api/timers', data, {
+        headers: { Authorization: `Bearer ${props.token}` }
+      });
+      if (response.data.msg) {
+        ElMessage.success(response.data.msg);
+      } else {
+        ElMessage.success('添加成功');
       }
     }
-  });
+    
+    dialogVisible.value = false;
+    resetForm();
+    fetchCountdowns();
+  } catch (error) {
+    console.error('操作失败:', error);
+    if (error.response?.data?.msg) {
+      ElMessage.error(error.response.data.msg);
+    } else if (error.message) {
+      ElMessage.error(error.message);
+    } else {
+      ElMessage.error('操作失败，请重试');
+    }
+  }
 }
 
 function resetForm() {
@@ -360,8 +450,16 @@ function resetForm() {
   form.repeat_until = '';
   form.notify_email = userInfo.value.email || '';
   form.bark_account_id = null;
+  form.bark_title = '';
+  form.bark_body = '';
+  form.bark_group = '';
+  form.bark_sound = '';
+  form.bark_level = '';
+  form.bark_copy = '';
+  form.bark_url = '';
   editing.value = false;
   editId.value = null;
+  showBarkAdvanced.value = false;
 }
 
 function editCountdown(item) {
@@ -372,6 +470,13 @@ function editCountdown(item) {
   form.target_time = item.end_time ? item.end_time.slice(0, 16) : '';
   form.notify_email = item.notify_email;
   form.bark_account_id = item.bark_account_id;
+  form.bark_title = item.bark_title || '';
+  form.bark_body = item.bark_body || '';
+  form.bark_group = item.bark_group || '';
+  form.bark_sound = item.bark_sound || '';
+  form.bark_level = item.bark_level || '';
+  form.bark_copy = item.bark_copy || '';
+  form.bark_url = item.bark_url || '';
   
   if (item.repeat_type && item.repeat_type !== 'none') {
     form.type = 'cycle';
@@ -514,6 +619,18 @@ onMounted(() => {
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId);
 });
+
+const getStatusType = (status) => {
+  if (status === '已通知') return 'success';
+  if (status.includes('分钟后')) return 'danger';
+  if (status.includes('小时后')) return 'warning';
+  if (status.includes('天后')) return 'info';
+  return 'info';
+};
+
+const formatStatus = (status) => {
+  return status.replace('下一次通知在', '');
+};
 </script>
 
 <style lang="scss" scoped>

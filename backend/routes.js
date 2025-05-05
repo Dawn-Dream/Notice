@@ -677,4 +677,45 @@ router.delete('/api/user/bark-accounts/:id', auth, (req, res) => {
   });
 });
 
+// 修改用户密码
+router.post('/api/user/change-password', auth, async (req, res) => {
+  const { old_password, new_password } = req.body;
+  if (!old_password || !new_password) {
+    return res.status(400).json({ msg: '参数不完整' });
+  }
+
+  try {
+    // 验证旧密码
+    const user = await new Promise((resolve, reject) => {
+      db.get('SELECT password_hash FROM users WHERE id = ?', [req.user.id], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+
+    if (!user) {
+      return res.status(404).json({ msg: '用户不存在' });
+    }
+
+    const match = await bcrypt.compare(old_password, user.password_hash);
+    if (!match) {
+      return res.status(400).json({ msg: '原密码错误' });
+    }
+
+    // 更新新密码
+    const hash = await bcrypt.hash(new_password, 10);
+    await new Promise((resolve, reject) => {
+      db.run('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.user.id], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    res.json({ msg: '密码修改成功' });
+  } catch (error) {
+    console.error('修改密码失败:', error);
+    res.status(500).json({ msg: '修改密码失败' });
+  }
+});
+
 module.exports = router; 

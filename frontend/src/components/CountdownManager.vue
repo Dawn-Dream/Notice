@@ -163,7 +163,7 @@
         </template>
         
         <el-form-item label="通知邮箱" prop="notify_email">
-          <el-select v-model="form.notify_email">
+          <el-select v-model="form.notify_email" clearable placeholder="不推送邮箱通知">
             <el-option
               :label="`${userInfo.email}（主邮箱）`"
               :value="userInfo.email"
@@ -178,7 +178,7 @@
         </el-form-item>
         <!-- 新增Bark账户选择 -->
         <el-form-item label="Bark账户" prop="bark_account_id">
-          <el-select v-model="form.bark_account_id" clearable placeholder="不推送Bark可不选">
+          <el-select v-model="form.bark_account_id" clearable placeholder="不推送Bark">
             <el-option v-for="b in barkAccounts" :key="b.id" :label="b.name + ' - ' + b.base_url" :value="b.id" />
           </el-select>
         </el-form-item>
@@ -299,9 +299,6 @@ const rules = {
   ],
   target_time: [
     { required: true, message: '请选择目标时间', trigger: 'change' }
-  ],
-  notify_email: [
-    { required: true, message: '请选择通知邮箱', trigger: 'change' }
   ]
 };
 
@@ -385,17 +382,17 @@ async function handleSubmit() {
   
   try {
     await formRef.value.validate();
-    
+    // 不再兜底主邮箱，直接提交当前值
     const data = {
       title: form.title.trim(),
       end_time: new Date(form.target_time).toISOString(),
-      email_content: form.email_content?.trim() || form.title.trim(), // 如果没填内容，默认使用标题
+      email_content: form.email_content?.trim() || form.title.trim(),
       repeat_type: form.type === 'cycle' ? form.repeat_unit : 'none',
       repeat_value: form.type === 'cycle' ? (form.repeat_value || 1) : 1,
       repeat_until: form.type === 'cycle' && form.repeat_until
         ? new Date(form.repeat_until).toISOString()
         : null,
-      notify_email: form.notify_email,
+      notify_email: form.notify_email, // 允许为空
       bark_account_id: form.bark_account_id || null,
       bark_title: form.bark_title?.trim() || null,
       bark_body: form.bark_body?.trim() || null,

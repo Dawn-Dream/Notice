@@ -27,7 +27,7 @@ function getEnvSmtpConfig() {
   if (!config.password) missingVars.push('SMTP_PASS');
   
   if (missingVars.length > 0) {
-    console.warn('缺少以下环境变量:', missingVars.join(', '));
+    console.warn('[warning]缺少以下环境变量:', missingVars.join(', '));
   }
 
   return config;
@@ -39,7 +39,7 @@ async function initTransporter() {
     // 先检查是否使用环境变量配置
     db.get('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1', async (err, setting) => {
       if (err) {
-        console.error('获取配置来源失败:', err);
+        console.error('[warning]获取配置来源失败:', err);
         reject(err);
         return;
       }
@@ -53,7 +53,7 @@ async function initTransporter() {
           const envConfig = getEnvSmtpConfig();
           if (!envConfig.host || !envConfig.username || !envConfig.password) {
             // 如果环境变量配置不完整，直接使用数据库配置
-            console.warn('环境变量SMTP配置不完整，使用数据库配置');
+            console.warn('[warning]环境变量SMTP配置不完整，使用数据库配置');
             // 获取数据库配置
             const dbConfig = await new Promise((resolve, reject) => {
               db.get('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
@@ -130,7 +130,7 @@ async function initTransporter() {
           resolve(transporter);
         }
       } catch (error) {
-        console.error('创建SMTP传输对象失败:', error);
+        console.error('[warning]创建SMTP传输对象失败:', error);
         reject(error);
       }
     });
@@ -189,7 +189,7 @@ async function sendMail(to, subject, text) {
 
     return result;
   } catch (error) {
-    console.error('发送邮件失败:', error);
+    console.error('[warning]发送邮件失败:', error);
     
     // 如果发送失败，尝试重新初始化transporter并重试一次
     try {
@@ -202,7 +202,7 @@ async function sendMail(to, subject, text) {
       });
       return result;
     } catch (retryError) {
-      console.error('重试发送邮件失败:', retryError);
+      console.error('[warning]重试发送邮件失败:', retryError);
       throw retryError;
     }
   }
@@ -213,66 +213,80 @@ setInterval(() => {
   const now = new Date().toISOString();
   db.all(`SELECT timers.*, users.email FROM timers JOIN users ON timers.user_id = users.id WHERE timers.notified = 0 AND timers.end_time <= ?`, [now], (err, rows) => {
     if (err) {
-      console.error('数据库查询失败:', err);
+      console.error('[warning]数据库查询失败:', err);
       return;
     }
     rows.forEach(async timer => {
-      const toEmail = timer.notify_email || timer.email;
-      try {
-        // 邮件推送
-        await sendMail(toEmail, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`);
-        // Bark 推送
-        if (timer.bark_account_id) {
-          db.get('SELECT * FROM user_bark_accounts WHERE id = ?', [timer.bark_account_id], async (err, barkAcc) => {
-            if (!err && barkAcc) {
-              const client = new BarkClient({ baseUrl: barkAcc.base_url, key: barkAcc.api_key });
-              // 组装 payload，优先用高级参数，否则用默认
-              const payload = {};
-              payload.body = timer.bark_body || timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`;
-              payload.title = timer.bark_title || timer.title;
-              if (timer.bark_group) payload.group = timer.bark_group;
-              if (timer.bark_sound) payload.sound = timer.bark_sound;
-              if (timer.bark_level) payload.level = timer.bark_level;
-              if (timer.bark_copy) payload.copy = timer.bark_copy;
-              if (timer.bark_url) payload.url = timer.bark_url;
-              try {
-                await client.pushMessage(payload);
-                console.log(`Bark推送成功：${timer.title}`);
-              } catch (e) {
-                console.error('Bark推送失败:', e);
-              }
+      const nowStr = new Date().toISOString();
+      let pushed = false;
+      // 邮件推送
+      if (timer.notify_email) {
+        try {
+          await sendMail(timer.notify_email, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`);
+          console.log(`[log]已发送邮件给${timer.notify_email}，标题：${timer.title}`);
+          pushed = true;
+        } catch (e) {
+          console.error(`[warning]邮件发送失败（收件人：${timer.notify_email}，标题：${timer.title}）：`, e && e.stack ? e.stack : e);
+        }
+      }
+      // Bark 推送
+      if (timer.bark_account_id) {
+        db.get('SELECT * FROM user_bark_accounts WHERE id = ?', [timer.bark_account_id], async (err, barkAcc) => {
+          if (!err && barkAcc) {
+            const client = new BarkClient({ baseUrl: barkAcc.base_url, key: barkAcc.api_key });
+            const payload = {};
+            payload.body = timer.bark_body || timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`;
+            payload.title = timer.bark_title || timer.title;
+            if (timer.bark_group) payload.group = timer.bark_group;
+            if (timer.bark_sound) payload.sound = timer.bark_sound;
+            if (timer.bark_level) payload.level = timer.bark_level;
+            if (timer.bark_copy) payload.copy = timer.bark_copy;
+            if (timer.bark_url) payload.url = timer.bark_url;
+            try {
+              await client.pushMessage(payload);
+              console.log(`[log]Bark推送成功：${timer.title}`);
+              pushed = true;
+              handleNextCycle(timer, nowStr);
+            } catch (e) {
+              console.error('[warning]Bark推送失败:', e);
             }
-          });
-        }
-        const nowStr = new Date().toISOString();
-        // 定期提醒逻辑
-        let nextTime = null;
-        if (timer.repeat_type && timer.repeat_type !== 'none') {
-          let cur = new Date(timer.end_time);
-          const nowDate = new Date();
-          while (cur <= nowDate) {
-            if (timer.repeat_type === 'minute') cur.setMinutes(cur.getMinutes() + (timer.repeat_value || 1));
-            if (timer.repeat_type === 'hour') cur.setHours(cur.getHours() + (timer.repeat_value || 1));
-            if (timer.repeat_type === 'day') cur.setDate(cur.getDate() + (timer.repeat_value || 1));
-            if (timer.repeat_type === 'month') cur.setMonth(cur.getMonth() + (timer.repeat_value || 1));
-            if (timer.repeat_type === 'year') cur.setFullYear(cur.getFullYear() + (timer.repeat_value || 1));
           }
-          nextTime = cur.toISOString();
-        }
-        // 判断是否超过截止
-        if (nextTime && (!timer.repeat_until || nextTime <= timer.repeat_until)) {
-          db.run('UPDATE timers SET end_time = ?, notified = 0, last_notified_at = ? WHERE id = ?', [nextTime, nowStr, timer.id]);
-          console.log(`定期提醒：已推算下次提醒时间为${nextTime}`);
-        } else {
-          db.run('UPDATE timers SET notified = 1, last_notified_at = ? WHERE id = ?', [nowStr, timer.id]);
-        }
-        console.log(`已发送邮件给${toEmail}，标题：${timer.title}`);
-      } catch (e) {
-        console.error(`邮件发送失败（收件人：${toEmail}，标题：${timer.title}）：`, e && e.stack ? e.stack : e);
+        });
+        pushed = true;
+      }
+      // 无推送渠道也要走周期逻辑
+      if (!timer.notify_email && !timer.bark_account_id) {
+        handleNextCycle(timer, nowStr);
+      } else if (pushed && !timer.bark_account_id) {
+        // 只有邮件推送时，处理周期逻辑
+        handleNextCycle(timer, nowStr);
       }
     });
   });
 }, 10 * 1000);
+
+// 新增：周期性提醒处理函数
+function handleNextCycle(timer, nowStr) {
+  let nextTime = null;
+  if (timer.repeat_type && timer.repeat_type !== 'none') {
+    let cur = new Date(timer.end_time);
+    const nowDate = new Date();
+    while (cur <= nowDate) {
+      if (timer.repeat_type === 'minute') cur.setMinutes(cur.getMinutes() + (timer.repeat_value || 1));
+      if (timer.repeat_type === 'hour') cur.setHours(cur.getHours() + (timer.repeat_value || 1));
+      if (timer.repeat_type === 'day') cur.setDate(cur.getDate() + (timer.repeat_value || 1));
+      if (timer.repeat_type === 'month') cur.setMonth(cur.getMonth() + (timer.repeat_value || 1));
+      if (timer.repeat_type === 'year') cur.setFullYear(cur.getFullYear() + (timer.repeat_value || 1));
+    }
+    nextTime = cur.toISOString();
+  }
+  if (nextTime && (!timer.repeat_until || nextTime <= timer.repeat_until)) {
+    db.run('UPDATE timers SET end_time = ?, notified = 0, last_notified_at = ? WHERE id = ?', [nextTime, nowStr, timer.id]);
+    console.log(`[log]定期提醒：已推算下次提醒时间为${nextTime}`);
+  } else {
+    db.run('UPDATE timers SET notified = 1, last_notified_at = ? WHERE id = ?', [nowStr, timer.id]);
+  }
+}
 
 module.exports = {
   sendMail,

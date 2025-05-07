@@ -8,3 +8,4 @@ backend/data.db
 !.env.example
 !**/.env.example
 backend/data.db.backup
+.codeaskdata

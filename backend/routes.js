@@ -3,62 +3,248 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const sqlite3 = require('sqlite3').verbose();
 const nodemailer = require('nodemailer');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const router = express.Router();
 const db = new sqlite3.Database('./data/data.db');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
+// 数据库服务层
+class DatabaseService {
+  constructor(db) {
+    this.db = db;
+  }
+
+  query(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      this.db.get(sql, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+  }
+
+  queryAll(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, params, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      });
+    });
+  }
+
+  run(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, params, function(err) {
+        if (err) reject(err);
+        else resolve({ lastID: this.lastID, changes: this.changes });
+      });
+    });
+  }
+}
+
+const dbService = new DatabaseService(db);
+
+// 工具函数
+function validatePassword(password) {
+  if (!password) return { valid: false, message: '密码不能为空' };
+  if (password.length < 8) return { valid: false, message: '密码至少需要8个字符' };
+  if (!/[A-Z]/.test(password)) return { valid: false, message: '密码需要包含大写字母' };
+  if (!/[a-z]/.test(password)) return { valid: false, message: '密码需要包含小写字母' };
+  if (!/[0-9]/.test(password)) return { valid: false, message: '密码需要包含数字' };
+  return { valid: true };
+}
+
+function validateEmail(email) {
+  if (!email) return { valid: false, message: '邮箱不能为空' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { valid: false, message: '邮箱格式不正确' };
+  return { valid: true };
+}
+
+// 统一错误处理中间件
+function errorHandler(err, req, res, next) {
+  console.error('[error]', err);
+  res.status(500).json({ 
+    success: false,
+    message: '服务器错误',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+}
+
+// 速率限制配置
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分钟
+  max: 5, // 每个IP 5次请求
+  message: '尝试次数过多，请稍后再试'
+});
+
+// 计算倒计时状态
+function calculateTimerStatus(timer, now = new Date()) {
+  if (timer.notified) {
+    return '已通知';
+  }
+  
+  if (timer.repeat_type && timer.repeat_type !== 'none') {
+    let next = new Date(timer.end_time);
+    const repeatValue = timer.repeat_value || 1;
+    let unit = timer.repeat_type;
+    
+    while (next <= now) {
+      if (unit === 'minute') next.setMinutes(next.getMinutes() + repeatValue);
+      if (unit === 'hour') next.setHours(next.getHours() + repeatValue);
+      if (unit === 'day') next.setDate(next.getDate() + repeatValue);
+      if (unit === 'month') next.setMonth(next.getMonth() + repeatValue);
+      if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
+    }
+    
+    const diffMs = next - now;
+    const diffMin = Math.floor(diffMs / (1000 * 60));
+    const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffMin < 1) {
+      return '即将通知';
+    } else if (diffMin < 60) {
+      return `下一次通知在${diffMin}分钟后`;
+    } else if (diffHour < 24) {
+      const remainMinutes = diffMin % 60;
+      return remainMinutes > 0 
+        ? `下一次通知在${diffHour}小时${remainMinutes}分钟后`
+        : `下一次通知在${diffHour}小时后`;
+    } else {
+      const remainHours = diffHour % 24;
+      return remainHours > 0
+        ? `下一次通知在${diffDay}天${remainHours}小时后`
+        : `下一次通知在${diffDay}天后`;
+    }
+  }
+  
+  return '等待通知';
+}
+
 // 用户注册
 router.post('/api/register', async (req, res) => {
-  const { username, email, password } = req.body;
-  if (!username || !email || !password) return res.status(400).json({ msg: '参数不完整' });
-  const hash = await bcrypt.hash(password, 10);
-  db.run('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)', [username, email, hash], function(err) {
-    if (err) return res.status(400).json({ msg: '用户名或邮箱已存在' });
-    res.json({ msg: '注册成功' });
-  });
+  try {
+    const { username, email, password } = req.body;
+    
+    // 参数验证
+    if (!username || !email || !password) {
+      return res.status(400).json({ success: false, message: '参数不完整' });
+    }
+    
+    // 验证邮箱格式
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({ success: false, message: emailValidation.message });
+    }
+    
+    // 验证密码强度
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ success: false, message: passwordValidation.message });
+    }
+    
+    // 检查用户名和邮箱是否已存在
+    const existingUser = await dbService.query(
+      'SELECT id FROM users WHERE username = ? OR email = ?',
+      [username, email]
+    );
+    
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: '用户名或邮箱已存在' });
+    }
+    
+    // 创建用户
+    const hash = await bcrypt.hash(password, 10);
+    const result = await dbService.run(
+      'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+      [username, email, hash]
+    );
+    
+    res.json({ success: true, message: '注册成功', userId: result.lastID });
+  } catch (error) {
+    console.error('[error]注册失败:', error);
+    res.status(500).json({ success: false, message: '注册失败' });
+  }
 });
 
 // 用户登录
-router.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-    if (err || !user) return res.status(400).json({ msg: '用户不存在' });
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(400).json({ msg: '密码错误' });
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ 
-      token,
-      username: user.username,
-      is_admin: user.is_admin
+router.post('/api/login', authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: '参数不完整' });
+    }
+    
+    const user = await dbService.query('SELECT * FROM users WHERE username = ?', [username]);
+    if (!user) {
+      return res.status(400).json({ success: false, message: '用户不存在' });
+    }
+    
+    const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordMatch) {
+      return res.status(400).json({ success: false, message: '密码错误' });
+    }
+    
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        token,
+        username: user.username,
+        is_admin: user.is_admin
+      }
     });
-  });
+  } catch (error) {
+    console.error('[error]登录失败:', error);
+    res.status(500).json({ success: false, message: '登录失败' });
+  }
 });
 
 // 鉴权中间件
 function auth(req, res, next) {
-  const token = req.headers['authorization']?.split(' ')[1];
-  if (!token) return res.status(401).json({ msg: '未登录' });
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(401).json({ msg: '无效token' });
-    req.user = user;
-    next();
-  });
+  try {
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: '未登录' });
+    }
+    
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+      if (err) {
+        return res.status(401).json({ success: false, message: '无效token' });
+      }
+      req.user = user;
+      next();
+    });
+  } catch (error) {
+    console.error('[error]鉴权失败:', error);
+    res.status(500).json({ success: false, message: '鉴权失败' });
+  }
 }
 
 // 管理员鉴权
-function adminOnly(req, res, next) {
-  db.get('SELECT is_admin FROM users WHERE id = ?', [req.user.id], (err, user) => {
-    if (err || !user || !user.is_admin) {
-      return res.status(403).json({ msg: '无权限' });
+async function adminOnly(req, res, next) {
+  try {
+    const user = await dbService.query('SELECT is_admin FROM users WHERE id = ?', [req.user.id]);
+    if (!user || !user.is_admin) {
+      return res.status(403).json({ success: false, message: '无权限' });
     }
     next();
-  });
+  } catch (error) {
+    console.error('[error]管理员鉴权失败:', error);
+    res.status(500).json({ success: false, message: '鉴权失败' });
+  }
 }
 
 // 新建倒计时
-router.post('/api/timers', auth, (req, res) => {
+router.post('/api/timers', auth, async (req, res) => {
   try {
     const {
       title, end_time, email_content, repeat_type = 'none', repeat_until = null, 
@@ -69,34 +255,37 @@ router.post('/api/timers', auth, (req, res) => {
 
     // 基本参数验证
     if (!title || !end_time) {
-      return res.status(400).json({ msg: '标题和截止时间不能为空' });
+      return res.status(400).json({ success: false, message: '标题和截止时间不能为空' });
     }
 
     // 验证日期格式
     const endTimeDate = new Date(end_time);
     if (isNaN(endTimeDate.getTime())) {
-      return res.status(400).json({ msg: '截止时间格式不正确' });
+      return res.status(400).json({ success: false, message: '截止时间格式不正确' });
     }
 
     // 验证重复设置
     if (repeat_type !== 'none' && repeat_type !== undefined) {
       if (!['minute', 'hour', 'day', 'month', 'year'].includes(repeat_type)) {
-        return res.status(400).json({ msg: '无效的重复类型' });
+        return res.status(400).json({ success: false, message: '无效的重复类型' });
       }
       if (repeat_value < 1) {
-        return res.status(400).json({ msg: '重复间隔必须大于0' });
+        return res.status(400).json({ success: false, message: '重复间隔必须大于0' });
       }
       if (repeat_until) {
         const repeatUntilDate = new Date(repeat_until);
         if (isNaN(repeatUntilDate.getTime())) {
-          return res.status(400).json({ msg: '周期终止时间格式不正确' });
+          return res.status(400).json({ success: false, message: '周期终止时间格式不正确' });
         }
       }
     }
 
     // 验证邮箱格式
-    if (notify_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notify_email)) {
-      return res.status(400).json({ msg: '邮箱格式不正确' });
+    if (notify_email) {
+      const emailValidation = validateEmail(notify_email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ success: false, message: emailValidation.message });
+      }
     }
 
     // 插入数据库
@@ -114,162 +303,132 @@ router.post('/api/timers', auth, (req, res) => {
       bark_group, bark_sound, bark_level, bark_copy, bark_url
     ];
 
-    db.run(sql, params, function(err) {
-      if (err) {
-        console.error('创建倒计时失败:', err);
-        return res.status(500).json({ msg: '创建失败', error: err.message });
-      }
-      res.json({ id: this.lastID, msg: '创建成功' });
-    });
+    const result = await dbService.run(sql, params);
+    res.json({ success: true, message: '创建成功', timerId: result.lastID });
   } catch (error) {
-    console.error('创建倒计时异常:', error);
-    res.status(500).json({ msg: '服务器错误', error: error.message });
+    console.error('[error]创建倒计时失败:', error);
+    res.status(500).json({ success: false, message: '创建失败' });
   }
 });
 
 // 查询当前用户所有倒计时
-router.get('/api/timers', auth, (req, res) => {
-  db.all('SELECT * FROM timers WHERE user_id = ?', [req.user.id], (err, rows) => {
-    if (err) return res.status(500).json({ msg: '查询失败' });
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const result = rows.map(row => {
-      let status = '';
-      if (row.notified) {
-        status = '已通知';
-      } else if (row.repeat_type && row.repeat_type !== 'none') {
-        // 计算下次通知时间
-        let next = new Date(row.end_time);
-        const repeatValue = row.repeat_value || 1;
-        let unit = row.repeat_type;
-        while (next <= now) {
-          if (unit === 'minute') next.setMinutes(next.getMinutes() + repeatValue);
-          if (unit === 'hour') next.setHours(next.getHours() + repeatValue);
-          if (unit === 'day') next.setDate(next.getDate() + repeatValue);
-          if (unit === 'month') next.setMonth(next.getMonth() + repeatValue);
-          if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
-        }
-        const diffMs = next - now;
-        const diffMin = Math.floor(diffMs / (1000 * 60));
-        const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
-        if (diffMin < 1) {
-          status = '即将通知';
-        } else if (diffMin < 60) {
-          status = `下一次通知在${diffMin}分钟后`;
-        } else if (diffHour < 24) {
-          const remainMinutes = diffMin % 60;
-          status = remainMinutes > 0 
-            ? `下一次通知在${diffHour}小时${remainMinutes}分钟后`
-            : `下一次通知在${diffHour}小时后`;
-        } else {
-          const remainHours = diffHour % 24;
-          status = remainHours > 0
-            ? `下一次通知在${diffDay}天${remainHours}小时后`
-            : `下一次通知在${diffDay}天后`;
-        }
-      } else {
-        status = '等待通知';
-      }
-      return { ...row, status };
-    });
+router.get('/api/timers', auth, async (req, res) => {
+  try {
+    const timers = await dbService.queryAll('SELECT * FROM timers WHERE user_id = ?', [req.user.id]);
+    const result = timers.map(timer => ({
+      ...timer,
+      status: calculateTimerStatus(timer)
+    }));
     res.json(result);
-  });
+  } catch (error) {
+    console.error('[error]查询倒计时失败:', error);
+    res.status(500).json({ success: false, message: '查询失败' });
+  }
 });
 
 // 删除倒计时
-router.delete('/api/timers/:id', auth, (req, res) => {
-  db.run('DELETE FROM timers WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], function(err) {
-    if (err) return res.status(500).json({ msg: '删除失败' });
-    res.json({ msg: '删除成功' });
-  });
+router.delete('/api/timers/:id', auth, async (req, res) => {
+  try {
+    const result = await dbService.run(
+      'DELETE FROM timers WHERE id = ? AND user_id = ?',
+      [req.params.id, req.user.id]
+    );
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '倒计时不存在或无权限删除' });
+    }
+    
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('[error]删除倒计时失败:', error);
+    res.status(500).json({ success: false, message: '删除失败' });
+  }
 });
 
 // 获取所有用户（admin）
-router.get('/api/admin/users', auth, adminOnly, (req, res) => {
-  db.all('SELECT id, username, email, is_admin FROM users', (err, rows) => {
-    if (err) return res.status(500).json({ msg: '查询失败' });
-    res.json(rows);
-  });
+router.get('/api/admin/users', auth, adminOnly, async (req, res) => {
+  try {
+    const users = await dbService.queryAll('SELECT id, username, email, is_admin FROM users');
+    res.json(users);
+  } catch (error) {
+    console.error('[error]获取用户列表失败:', error);
+    res.status(500).json({ success: false, message: '查询失败' });
+  }
 });
 
 // 获取所有倒计时（admin）
-router.get('/api/admin/timers', auth, adminOnly, (req, res) => {
-  db.all('SELECT timers.*, users.username FROM timers LEFT JOIN users ON timers.user_id = users.id', (err, rows) => {
-    if (err) return res.status(500).json({ msg: '查询失败' });
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const result = rows.map(row => {
-      let status = '';
-      if (row.notified) {
-        status = '已通知';
-      } else if (row.repeat_type && row.repeat_type !== 'none') {
-        // 计算下次通知时间
-        let next = new Date(row.end_time);
-        const repeatValue = row.repeat_value || 1;
-        let unit = row.repeat_type;
-        while (next <= now) {
-          if (unit === 'minute') next.setMinutes(next.getMinutes() + repeatValue);
-          if (unit === 'hour') next.setHours(next.getHours() + repeatValue);
-          if (unit === 'day') next.setDate(next.getDate() + repeatValue);
-          if (unit === 'month') next.setMonth(next.getMonth() + repeatValue);
-          if (unit === 'year') next.setFullYear(next.getFullYear() + repeatValue);
-        }
-        const diffMs = next - now;
-        const diffMin = Math.floor(diffMs / (1000 * 60));
-        const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDay = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
-        if (diffMin < 1) {
-          status = '即将通知';
-        } else if (diffMin < 60) {
-          status = `下一次通知在${diffMin}分钟后`;
-        } else if (diffHour < 24) {
-          const remainMinutes = diffMin % 60;
-          status = remainMinutes > 0 
-            ? `下一次通知在${diffHour}小时${remainMinutes}分钟后`
-            : `下一次通知在${diffHour}小时后`;
-        } else {
-          const remainHours = diffHour % 24;
-          status = remainHours > 0
-            ? `下一次通知在${diffDay}天${remainHours}小时后`
-            : `下一次通知在${diffDay}天后`;
-        }
-      } else {
-        status = '等待通知';
-      }
-      return { ...row, status };
-    });
+router.get('/api/admin/timers', auth, adminOnly, async (req, res) => {
+  try {
+    const timers = await dbService.queryAll(
+      'SELECT timers.*, users.username FROM timers LEFT JOIN users ON timers.user_id = users.id'
+    );
+    const result = timers.map(timer => ({
+      ...timer,
+      status: calculateTimerStatus(timer)
+    }));
     res.json(result);
-  });
+  } catch (error) {
+    console.error('[error]获取倒计时列表失败:', error);
+    res.status(500).json({ success: false, message: '查询失败' });
+  }
 });
 
 // 删除用户（admin）
-router.delete('/api/admin/users/:id', auth, adminOnly, (req, res) => {
-  db.run('DELETE FROM users WHERE id = ?', [req.params.id], function(err) {
-    if (err) return res.status(500).json({ msg: '删除失败' });
-    res.json({ msg: '删除成功' });
-  });
+router.delete('/api/admin/users/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await dbService.run('DELETE FROM users WHERE id = ?', [req.params.id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('[error]删除用户失败:', error);
+    res.status(500).json({ success: false, message: '删除失败' });
+  }
 });
 
 // 删除倒计时（admin）
-router.delete('/api/admin/timers/:id', auth, adminOnly, (req, res) => {
-  db.run('DELETE FROM timers WHERE id = ?', [req.params.id], function(err) {
-    if (err) return res.status(500).json({ msg: '删除失败' });
-    res.json({ msg: '删除成功' });
-  });
+router.delete('/api/admin/timers/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await dbService.run('DELETE FROM timers WHERE id = ?', [req.params.id]);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '倒计时不存在' });
+    }
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('[error]删除倒计时失败:', error);
+    res.status(500).json({ success: false, message: '删除失败' });
+  }
 });
 
 // 重置用户密码（admin）
 router.post('/api/admin/users/:id/reset', auth, adminOnly, async (req, res) => {
-  const { new_password } = req.body;
-  if (!new_password) return res.status(400).json({ msg: '新密码不能为空' });
-  const hash = await bcrypt.hash(new_password, 10);
-  db.run('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.params.id], function(err) {
-    if (err) return res.status(500).json({ msg: '重置失败' });
-    res.json({ msg: '重置成功' });
-  });
+  try {
+    const { new_password } = req.body;
+    if (!new_password) {
+      return res.status(400).json({ success: false, message: '新密码不能为空' });
+    }
+
+    const passwordValidation = validatePassword(new_password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ success: false, message: passwordValidation.message });
+    }
+
+    const hash = await bcrypt.hash(new_password, 10);
+    const result = await dbService.run(
+      'UPDATE users SET password_hash = ? WHERE id = ?',
+      [hash, req.params.id]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    res.json({ success: true, message: '重置成功' });
+  } catch (error) {
+    console.error('[error]重置密码失败:', error);
+    res.status(500).json({ success: false, message: '重置失败' });
+  }
 });
 
 // 获取当前用户信息
@@ -303,79 +462,137 @@ router.delete('/api/user/emails/:id', auth, (req, res) => {
 });
 
 // 编辑倒计时
-router.put('/api/timers/:id', auth, (req, res) => {
-  const {
-    title, end_time, email_content, repeat_type = 'none', repeat_until = null, repeat_value = 1, notify_email = null, bark_account_id = null,
-    bark_title = null, bark_body = null, bark_group = null, bark_sound = null, bark_level = null, bark_copy = null, bark_url = null
-  } = req.body;
-  db.run('UPDATE timers SET title = ?, end_time = ?, email_content = ?, repeat_type = ?, repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ?, bark_account_id = ?, bark_title = ?, bark_body = ?, bark_group = ?, bark_sound = ?, bark_level = ?, bark_copy = ?, bark_url = ? WHERE id = ? AND user_id = ?',
-    [title, end_time, email_content, repeat_type, repeat_until, repeat_value, notify_email, bark_account_id, bark_title, bark_body, bark_group, bark_sound, bark_level, bark_copy, bark_url, req.params.id, req.user.id],
-    function(err) {
-      if (err) return res.status(500).json({ msg: '更新失败', error: err.message });
-      res.json({ msg: '更新成功' });
+router.put('/api/timers/:id', auth, async (req, res) => {
+  try {
+    const {
+      title, end_time, email_content, repeat_type = 'none', repeat_until = null,
+      repeat_value = 1, notify_email = null, bark_account_id = null,
+      bark_title = null, bark_body = null, bark_group = null,
+      bark_sound = null, bark_level = null, bark_copy = null, bark_url = null
+    } = req.body;
+
+    // 验证参数
+    if (!title || !end_time) {
+      return res.status(400).json({ success: false, message: '标题和截止时间不能为空' });
     }
-  );
+
+    // 验证日期格式
+    const endTimeDate = new Date(end_time);
+    if (isNaN(endTimeDate.getTime())) {
+      return res.status(400).json({ success: false, message: '截止时间格式不正确' });
+    }
+
+    // 验证邮箱格式
+    if (notify_email) {
+      const emailValidation = validateEmail(notify_email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ success: false, message: emailValidation.message });
+      }
+    }
+
+    const result = await dbService.run(
+      `UPDATE timers SET 
+        title = ?, end_time = ?, email_content = ?, repeat_type = ?, 
+        repeat_until = ?, repeat_value = ?, notified = 0, notify_email = ?, 
+        bark_account_id = ?, bark_title = ?, bark_body = ?, bark_group = ?, 
+        bark_sound = ?, bark_level = ?, bark_copy = ?, bark_url = ? 
+      WHERE id = ? AND user_id = ?`,
+      [
+        title, end_time, email_content, repeat_type, repeat_until, repeat_value,
+        notify_email, bark_account_id, bark_title, bark_body, bark_group,
+        bark_sound, bark_level, bark_copy, bark_url, req.params.id, req.user.id
+      ]
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '倒计时不存在或无权限修改' });
+    }
+
+    res.json({ success: true, message: '更新成功' });
+  } catch (error) {
+    console.error('[error]更新倒计时失败:', error);
+    res.status(500).json({ success: false, message: '更新失败' });
+  }
 });
 
 // 修改用户邮箱（admin）
 router.put('/api/admin/users/:id/email', auth, adminOnly, async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ msg: '新邮箱不能为空' });
-  
-  // 检查邮箱格式
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return res.status(400).json({ msg: '邮箱格式不正确' });
-  }
-  
-  // 直接更新邮箱
-  db.run('UPDATE users SET email = ? WHERE id = ?', [email, req.params.id], function(err) {
-    if (err) {
-      return res.status(500).json({ msg: '更新失败' });
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: '新邮箱不能为空' });
     }
-    res.json({ msg: '更新成功' });
-  });
+    
+    // 验证邮箱格式
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({ success: false, message: emailValidation.message });
+    }
+    
+    const result = await dbService.run(
+      'UPDATE users SET email = ? WHERE id = ?',
+      [email, req.params.id]
+    );
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+    
+    res.json({ success: true, message: '更新成功' });
+  } catch (error) {
+    console.error('[error]更新邮箱失败:', error);
+    res.status(500).json({ success: false, message: '更新失败' });
+  }
 });
 
 // 添加用户（admin）
 router.post('/api/admin/users', auth, adminOnly, async (req, res) => {
-  const { username, email, password, is_admin = 0 } = req.body;
-  
-  // 参数验证
-  if (!username || !email || !password) {
-    return res.status(400).json({ msg: '参数不完整' });
-  }
-  
-  // 检查邮箱格式
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return res.status(400).json({ msg: '邮箱格式不正确' });
-  }
-  
-  // 只检查用户名是否已存在
-  db.get('SELECT id FROM users WHERE username = ?', [username], async (err, row) => {
-    if (err) return res.status(500).json({ msg: '查询失败' });
-    if (row) return res.status(400).json({ msg: '用户名已存在' });
+  try {
+    const { username, email, password, is_admin = 0 } = req.body;
     
-    try {
-      const hash = await bcrypt.hash(password, 10);
-      db.run('INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)', 
-        [username, email, hash, is_admin], 
-        function(err) {
-          if (err) return res.status(500).json({ msg: '创建失败' });
-          res.json({ 
-            msg: '创建成功',
-            user: {
-              id: this.lastID,
-              username,
-              email,
-              is_admin
-            }
-          });
-        }
-      );
-    } catch (err) {
-      res.status(500).json({ msg: '密码加密失败' });
+    // 参数验证
+    if (!username || !email || !password) {
+      return res.status(400).json({ success: false, message: '参数不完整' });
     }
-  });
+    
+    // 验证邮箱格式
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+      return res.status(400).json({ success: false, message: emailValidation.message });
+    }
+    
+    // 验证密码强度
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ success: false, message: passwordValidation.message });
+    }
+    
+    // 检查用户名是否已存在
+    const existingUser = await dbService.query('SELECT id FROM users WHERE username = ?', [username]);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: '用户名已存在' });
+    }
+    
+    const hash = await bcrypt.hash(password, 10);
+    const result = await dbService.run(
+      'INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+      [username, email, hash, is_admin]
+    );
+    
+    res.json({
+      success: true,
+      message: '创建成功',
+      data: {
+        id: result.lastID,
+        username,
+        email,
+        is_admin
+      }
+    });
+  } catch (error) {
+    console.error('[error]创建用户失败:', error);
+    res.status(500).json({ success: false, message: '创建失败' });
+  }
 });
 
 // 从环境变量获取SMTP配置
@@ -717,5 +934,8 @@ router.post('/api/user/change-password', auth, async (req, res) => {
     res.status(500).json({ msg: '修改密码失败' });
   }
 });
+
+// 注册错误处理中间件
+router.use(errorHandler);
 
 module.exports = router; 

@@ -3,10 +3,41 @@ const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 const { BarkClient } = require('@thiskyhan/bark.js');
 
+// 常量配置
+const CHECK_INTERVAL = process.env.CHECK_INTERVAL || 10 * 1000;
+const SMTP_RELOAD_INTERVAL = process.env.SMTP_RELOAD_INTERVAL || 10 * 60 * 1000;
+const DEFAULT_SMTP_PORT = 465;
+
+// 工具函数
+function createTransporter(config) {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: Number(config.port) || DEFAULT_SMTP_PORT,
+    secure: Boolean(config.secure),
+    auth: {
+      user: config.username,
+      pass: config.password
+    },
+    tls: {
+      rejectUnauthorized: false // 注意：在生产环境中可能需要启用证书验证
+    }
+  });
+}
+
+function queryDb(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
 const db = new sqlite3.Database('./data/data.db');
 
 // 创建一个可重用的transporter
 let transporter = null;
+let isReady = false;
 
 // 从环境变量获取SMTP配置
 function getEnvSmtpConfig() {
@@ -35,132 +66,59 @@ function getEnvSmtpConfig() {
 
 // 初始化或更新transporter
 async function initTransporter() {
-  return new Promise((resolve, reject) => {
-    // 先检查是否使用环境变量配置
-    db.get('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1', async (err, setting) => {
-      if (err) {
-        console.error('[warning]获取配置来源失败:', err);
-        reject(err);
-        return;
+  try {
+    const setting = await queryDb('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1');
+    const useEnvConfig = setting ? setting.use_env_config : 1; // 默认使用环境变量
+    console.log('Using config source:', useEnvConfig ? 'env' : 'db');
+
+    let config;
+    if (useEnvConfig) {
+      config = getEnvSmtpConfig();
+      if (!config.host || !config.username || !config.password) {
+        console.warn('[warning]环境变量SMTP配置不完整，使用数据库配置');
+        config = await queryDb('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1');
       }
+    } else {
+      config = await queryDb('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1');
+    }
 
-      const useEnvConfig = setting ? setting.use_env_config : 1; // 默认使用环境变量
-      console.log('Using config source:', useEnvConfig ? 'env' : 'db');
+    if (!config || !config.host || !config.username || !config.password) {
+      throw new Error('SMTP配置不完整');
+    }
 
-      try {
-        if (useEnvConfig) {
-          // 尝试使用环境变量配置
-          const envConfig = getEnvSmtpConfig();
-          if (!envConfig.host || !envConfig.username || !envConfig.password) {
-            // 如果环境变量配置不完整，直接使用数据库配置
-            console.warn('[warning]环境变量SMTP配置不完整，使用数据库配置');
-            // 获取数据库配置
-            const dbConfig = await new Promise((resolve, reject) => {
-              db.get('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
-                if (err) reject(err);
-                else resolve(config);
-              });
-            });
+    transporter = createTransporter(config);
+    isReady = true;
+    return transporter;
+  } catch (error) {
+    console.error('[warning]创建SMTP传输对象失败:', error);
+    isReady = false;
+    throw error;
+  }
+}
 
-            if (!dbConfig || !dbConfig.host || !dbConfig.username || !dbConfig.password) {
-              reject(new Error('SMTP配置不完整'));
-              return;
-            }
-
-            transporter = nodemailer.createTransport({
-              host: dbConfig.host,
-              port: Number(dbConfig.port) || 465,
-              secure: Boolean(dbConfig.secure),
-              auth: {
-                user: dbConfig.username,
-                pass: dbConfig.password
-              },
-              tls: {
-                rejectUnauthorized: false
-              }
-            });
-
-            resolve(transporter);
-            return;
-          }
-
-          // 使用环境变量配置
-          transporter = nodemailer.createTransport({
-            host: envConfig.host,
-            port: Number(envConfig.port) || 465,
-            secure: envConfig.secure !== undefined ? envConfig.secure : true,
-            auth: {
-              user: envConfig.username,
-              pass: envConfig.password
-            },
-            tls: {
-              rejectUnauthorized: false
-            }
-          });
-
-          resolve(transporter);
-          return;
-        } else {
-          // 使用数据库配置
-          const dbConfig = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
-              if (err) reject(err);
-              else resolve(config);
-            });
-          });
-
-          if (!dbConfig || !dbConfig.host || !dbConfig.username || !dbConfig.password) {
-            reject(new Error('数据库SMTP配置不完整'));
-            return;
-          }
-
-          transporter = nodemailer.createTransport({
-            host: dbConfig.host,
-            port: Number(dbConfig.port) || 465,
-            secure: Boolean(dbConfig.secure),
-            auth: {
-              user: dbConfig.username,
-              pass: dbConfig.password
-            },
-            tls: {
-              rejectUnauthorized: false
-            }
-          });
-
-          resolve(transporter);
-        }
-      } catch (error) {
-        console.error('[warning]创建SMTP传输对象失败:', error);
-        reject(error);
-      }
-    });
-  });
+// 确保transporter已初始化
+async function ensureReady() {
+  if (!isReady) {
+    await initTransporter();
+  }
+  return transporter;
 }
 
 // 初始化transporter
 initTransporter().catch(console.error);
 
-// 每10分钟重新加载SMTP配置
+// 定期重新加载SMTP配置
 setInterval(() => {
   initTransporter().catch(console.error);
-}, 10 * 60 * 1000);
+}, SMTP_RELOAD_INTERVAL);
 
 // 发送邮件
 async function sendMail(to, subject, text) {
   try {
-    // 如果transporter未初始化，先初始化
-    if (!transporter) {
-      await initTransporter();
-    }
+    await ensureReady();
 
     // 获取当前配置来源
-    const setting = await new Promise((resolve, reject) => {
-      db.get('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1', (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
+    const setting = await queryDb('SELECT use_env_config FROM smtp_config ORDER BY id DESC LIMIT 1');
     const useEnvConfig = setting ? setting.use_env_config : 1;
     let fromConfig;
 
@@ -171,12 +129,7 @@ async function sendMail(to, subject, text) {
         username: envConfig.username
       };
     } else {
-      fromConfig = await new Promise((resolve, reject) => {
-        db.get('SELECT from_name, username FROM smtp_config ORDER BY id DESC LIMIT 1', (err, config) => {
-          if (err) reject(err);
-          else resolve(config);
-        });
-      });
+      fromConfig = await queryDb('SELECT from_name, username FROM smtp_config ORDER BY id DESC LIMIT 1');
     }
 
     // 发送邮件
@@ -187,12 +140,14 @@ async function sendMail(to, subject, text) {
       text
     });
 
+    console.log(`[log]邮件发送成功 (收件人:${to}, 标题:${subject})`);
     return result;
   } catch (error) {
-    console.error('[warning]发送邮件失败:', error);
+    console.error(`[error]发送邮件失败 (收件人:${to}, 标题:${subject}):`, error);
     
     // 如果发送失败，尝试重新初始化transporter并重试一次
     try {
+      console.log('[log]尝试重新初始化transporter并重试发送');
       await initTransporter();
       const result = await transporter.sendMail({
         from: `"${fromConfig.from_name}" <${fromConfig.username}>`,
@@ -200,70 +155,78 @@ async function sendMail(to, subject, text) {
         subject,
         text
       });
+      console.log(`[log]重试发送成功 (收件人:${to}, 标题:${subject})`);
       return result;
     } catch (retryError) {
-      console.error('[warning]重试发送邮件失败:', retryError);
+      console.error(`[error]重试发送邮件失败 (收件人:${to}, 标题:${subject}):`, retryError);
       throw retryError;
     }
   }
 }
 
-// 定时任务：每10秒检查一次
+// 定时任务：定期检查需要发送的通知
 setInterval(() => {
   const now = new Date().toISOString();
   db.all(`SELECT timers.*, users.email FROM timers JOIN users ON timers.user_id = users.id WHERE timers.notified = 0 AND timers.end_time <= ?`, [now], (err, rows) => {
     if (err) {
-      console.error('[warning]数据库查询失败:', err);
+      console.error('[error]数据库查询失败:', err);
       return;
     }
     rows.forEach(async timer => {
       const nowStr = new Date().toISOString();
-      let pushed = false;
+      let notificationSent = false;
+      
       // 邮件推送
       if (timer.notify_email) {
         try {
           await sendMail(timer.notify_email, `倒计时提醒：${timer.title}`, timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`);
           console.log(`[log]已发送邮件给${timer.notify_email}，标题：${timer.title}`);
-          pushed = true;
+          notificationSent = true;
         } catch (e) {
-          console.error(`[warning]邮件发送失败（收件人：${timer.notify_email}，标题：${timer.title}）：`, e && e.stack ? e.stack : e);
+          console.error(`[error]邮件发送失败（收件人：${timer.notify_email}，标题：${timer.title}）：`, e && e.stack ? e.stack : e);
         }
       }
+      
       // Bark 推送
       if (timer.bark_account_id) {
         db.get('SELECT * FROM user_bark_accounts WHERE id = ?', [timer.bark_account_id], async (err, barkAcc) => {
           if (!err && barkAcc) {
             const client = new BarkClient({ baseUrl: barkAcc.base_url, key: barkAcc.api_key });
-            const payload = {};
-            payload.body = timer.bark_body || timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`;
-            payload.title = timer.bark_title || timer.title;
+            const payload = {
+              body: timer.bark_body || timer.email_content || `您的倒计时"${timer.title}"已到达：${timer.end_time}`,
+              title: timer.bark_title || timer.title
+            };
+            
+            // 添加可选的Bark参数
             if (timer.bark_group) payload.group = timer.bark_group;
             if (timer.bark_sound) payload.sound = timer.bark_sound;
             if (timer.bark_level) payload.level = timer.bark_level;
             if (timer.bark_copy) payload.copy = timer.bark_copy;
             if (timer.bark_url) payload.url = timer.bark_url;
+            
             try {
               await client.pushMessage(payload);
               console.log(`[log]Bark推送成功：${timer.title}`);
-              pushed = true;
+              notificationSent = true;
               handleNextCycle(timer, nowStr);
             } catch (e) {
-              console.error('[warning]Bark推送失败:', e);
+              console.error('[error]Bark推送失败:', e);
             }
           }
         });
-        pushed = true;
+        notificationSent = true;
       }
+      
       // 无推送渠道也要走周期逻辑
       if (!timer.notify_email && !timer.bark_account_id) {
         handleNextCycle(timer, nowStr);
-      } else if (pushed && !timer.bark_account_id) {
+      } else if (notificationSent && !timer.bark_account_id) {
         // 只有邮件推送时，处理周期逻辑
         handleNextCycle(timer, nowStr);
       }
     });
   });
-}, 10 * 1000);
+}, CHECK_INTERVAL);
 
 // 新增：周期性提醒处理函数
 function handleNextCycle(timer, nowStr) {

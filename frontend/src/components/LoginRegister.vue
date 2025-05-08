@@ -168,9 +168,9 @@ async function handleLogin() {
           password: loginForm.password
         });
         emit('loginSuccess', {
-          token: res.data.token,
-          username: loginForm.username,
-          is_admin: res.data.is_admin
+          token: res.data.data.token,
+          username: res.data.data.username,
+          is_admin: res.data.data.is_admin
         });
         ElMessage.success('登录成功');
       } catch (e) {
